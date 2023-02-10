@@ -6,3 +6,7 @@
 	path = lib/openzeppelin-contracts
 	url = https://github.com/openzeppelin/openzeppelin-contracts
 	branch = v4.8.1
+[submodule "lib/joe-v2"]
+	path = lib/joe-v2
+	url = https://github.com/traderjoe-xyz/joe-v2
+	branch = v1.0.0
