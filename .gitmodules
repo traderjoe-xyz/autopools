@@ -10,3 +10,6 @@
 	path = lib/joe-v2
 	url = https://github.com/traderjoe-xyz/joe-v2
 	branch = v1.0.0
+[submodule "lib/joe-v2-periphery"]
+	path = lib/joe-v2-periphery
+	url = https://github.com/traderjoe-xyz/joe-v2-periphery
