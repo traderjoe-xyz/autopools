@@ -3,4 +3,19 @@ src = 'src'
 out = 'out'
 libs = ['lib']
 
+[rpc_endpoints]
+avalanche = "https://api.avax.network/ext/bc/C/rpc"
+fuji = "https://api.avax-test.network/ext/bc/C/rpc"
+arbitrum_one = "https://arb1.arbitrum.io/rpc"
+arbitrum_one_goerli = "https://goerli-rollup.arbitrum.io/rpc"
+
+[etherscan]
+arbitrum_one_goerli = { url = "https://api-goerli.arbiscan.io/api", key = "${ARBISCAN_KEY}", chain = "arbitrum-goerli" }
+arbitrum_one = { url = "https://api.arbiscan.io/api", key = "${ARBISCAN_KEY}", chain = "arbitrum" }
+avalanche = { key = "${SNOWTRACE_API_KEY}", chain = "avalanche" }
+fuji = { key = "${SNOWTRACE_API_KEY}", chain = "fuji" }
+
+[fmt]
+number_underscore = "thousands"
+
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
