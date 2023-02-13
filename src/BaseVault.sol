@@ -7,6 +7,7 @@ import {ERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/ERC20Upgrad
 import {Initializable} from "openzeppelin-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
+import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
@@ -29,7 +30,7 @@ import {IWNative} from "./interfaces/IWNative.sol";
  * - 0x3C: 1 bytes: The decimals of the token X.
  * - 0x3D: 1 bytes: The decimals of the token Y.
  */
-abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, ReentrancyGuardUpgradeable, IBaseVault {
+abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeable, IBaseVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using Math512Bits for uint256;
 
@@ -104,7 +105,7 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
     function getStrategistFee() public view virtual override returns (uint256 strategistFee) {
         IStrategy strategy = _strategy;
 
-        if (address(strategy) != address(0)) return strategy.getStrategistFee();
+        return address(strategy) == address(0) ? 0 : strategy.getStrategistFee();
     }
 
     /**
@@ -115,7 +116,7 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
     function getRange() public view virtual override returns (uint24 low, uint24 upper) {
         IStrategy strategy = _strategy;
 
-        if (address(strategy) != address(0)) (low, upper) = strategy.getRange();
+        return address(strategy) == address(0) ? (0, 0) : strategy.getRange();
     }
 
     /**
@@ -126,9 +127,8 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
     function getOperators() public view virtual override returns (address defaultOperator, address operator) {
         IStrategy strategy = _strategy;
 
-        if (address(strategy) != address(0)) operator = strategy.getOperator();
-
         defaultOperator = _factory.getDefaultOperator();
+        operator = address(strategy) == address(0) ? address(0) : strategy.getOperator();
     }
 
     /**
@@ -148,7 +148,7 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
     function getPendingFees() public view virtual override returns (uint256 feesX, uint256 feesY) {
         IStrategy strategy = _strategy;
 
-        if (address(strategy) != address(0)) (feesX, feesY) = strategy.getPendingFees();
+        return address(strategy) == address(0) ? (0, 0) : strategy.getPendingFees();
     }
 
     /**
@@ -225,7 +225,7 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
         bool isNativeX = address(tokenX) == wnative;
 
         // Check that the native token is one of the tokens of the pair.
-        if (address(tokenX) != wnative && address(tokenY) != wnative) revert BaseVault__NoNativeToken();
+        if (!isNativeX && address(tokenY) != wnative) revert BaseVault__NoNativeToken();
 
         // Check that the native token amount matches the amount of native tokens sent.
         if (isNativeX && amountX != msg.value || !isNativeX && amountY != msg.value) {
@@ -273,16 +273,19 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
         IStrategy strategy = _strategy;
         uint256 totalShares = totalSupply();
 
-        // Burn the shares
-        _burn(msg.sender, shares);
-
         // Check if the strategy is set
         if (address(strategy) == address(0)) {
             (amountX, amountY) = _previewAmounts(strategy, shares);
 
+            // Burn the shares
+            _burn(msg.sender, shares);
+
             if (amountX > 0) _tokenX().safeTransfer(msg.sender, amountX);
             if (amountY > 0) _tokenY().safeTransfer(msg.sender, amountY);
         } else {
+            // Burn the shares
+            _burn(msg.sender, shares);
+
             // Withdraw the tokens from the strategy and send them to the user
             (amountX, amountY) = strategy.withdraw(shares, totalShares, msg.sender);
         }
@@ -319,10 +322,16 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
         } else {
             // Withdraw all tokens from the current strategy and send them to the new strategy
             IStrategy(currentStrategy).withdraw(1, 1, address(newStrategy));
+
+            // Unapprove the current strategy
+            _approveStrategy(currentStrategy, 0);
         }
 
         // Set the new strategy
         _setStrategy(newStrategy);
+
+        // Approve the new strategy
+        _approveStrategy(newStrategy, type(uint256).max);
     }
 
     /**
@@ -335,6 +344,9 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
         // Withdraw all tokens from the strategy and send them to the vault
         strategy.withdraw(1, 1, address(this));
 
+        // Unapprove the strategy
+        _approveStrategy(strategy, 0);
+
         // Remove the current strategy
         _setStrategy(IStrategy(address(0)));
     }
@@ -345,24 +357,21 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
      * @param recipient The address of the recipient.
      * @param amount The amount of tokens to be recovered.
      */
-    function recoverERC20(address token, address recipient, uint256 amount)
+    function recoverERC20(IERC20Upgradeable token, address recipient, uint256 amount)
         public
         virtual
         override
         nonReentrant
         onlyFactory
     {
-        // If strategy is not set, the tokens are held by the vault, so these 2 tokens are not allowed to be recovered.
-        if (address(_strategy) == address(0) && (token == address(_tokenX()) || token == address(_tokenY()))) {
-            revert BaseVault__InvalidToken();
-        }
+        if (token == _tokenX() || token == _tokenY()) revert BaseVault__InvalidToken();
 
         // If the token is the vault's token, the remaining amount must be greater than the minimum shares.
-        if (token == address(this) && IERC20Upgradeable(token).balanceOf(address(this)) <= amount + 1e6) {
+        if (token == this && IERC20Upgradeable(token).balanceOf(address(this)) <= amount + 1e6) {
             revert BaseVault__BurnMinShares();
         }
 
-        IERC20Upgradeable(token).safeTransfer(recipient, amount);
+        token.safeTransfer(recipient, amount);
     }
 
     /**
@@ -387,22 +396,6 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
      */
     function _tokenY() internal pure virtual returns (IERC20Upgradeable) {
         return IERC20Upgradeable(_getArgAddress(40));
-    }
-
-    /**
-     * @dev Returns the decimals of the token X.
-     * @return decimalsX The decimals of the token X.
-     */
-    function _decimalsX() internal pure virtual returns (uint256 decimalsX) {
-        return _getArgUint8(60);
-    }
-
-    /**
-     * @dev Returns the decimals of the token Y.
-     * @return decimalsY The decimals of the token Y.
-     */
-    function _decimalsY() internal pure virtual returns (uint256 decimalsY) {
-        return _getArgUint8(61);
     }
 
     /**
@@ -456,14 +449,9 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
      * @return amountY The amount of token Y held in the strategy.
      */
     function _getBalances(IStrategy strategy) internal view virtual returns (uint256 amountX, uint256 amountY) {
-        if (address(strategy) == address(0)) {
-            // If no strategy is set, return the balance of the vault
-            amountX = _tokenX().balanceOf(address(this));
-            amountY = _tokenY().balanceOf(address(this));
-        } else {
-            // Get the total amount of tokens held in the strategy
-            (amountX, amountY) = strategy.getBalances();
-        }
+        return address(strategy) == address(0)
+            ? (_tokenX().balanceOf(address(this)), _tokenY().balanceOf(address(this)))
+            : strategy.getBalances();
     }
 
     /**
@@ -474,6 +462,17 @@ abstract contract BaseVault is Clone, Initializable, ERC20Upgradeable, Reentranc
         _strategy = strategy;
 
         emit StrategySet(strategy);
+    }
+
+    /**
+     * @dev Approves the `strategy` to spend `amount` for each tokenX, tokenY and LB token.
+     * @param strategy The address of the strategy.
+     * @param amount The amount to be approved.
+     */
+    function _approveStrategy(IStrategy strategy, uint256 amount) internal virtual {
+        _tokenX().approve(address(strategy), amount);
+        _tokenY().approve(address(strategy), amount);
+        ILBToken(address(_pair())).setApprovalForAll(address(strategy), amount > 0);
     }
 
     /**

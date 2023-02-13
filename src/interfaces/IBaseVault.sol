@@ -7,7 +7,7 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 import {IStrategy} from "./IStrategy.sol";
 
-interface IBaseVault {
+interface IBaseVault is IERC20Upgradeable {
     error BaseVault__ZeroAmount();
     error BaseVault__OnlyFactory();
     error BaseVault__InvalidStrategy();
@@ -72,5 +72,5 @@ interface IBaseVault {
 
     function pauseVault() external;
 
-    function recoverERC20(address token, address recipient, uint256 amount) external;
+    function recoverERC20(IERC20Upgradeable token, address recipient, uint256 amount) external;
 }
