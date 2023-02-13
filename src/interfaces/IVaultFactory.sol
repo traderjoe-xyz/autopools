@@ -6,6 +6,7 @@ import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgr
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 import {IAggregatorV3} from "./IAggregatorV3.sol";
+import {IStrategy} from "./IStrategy.sol";
 
 interface IVaultFactory {
     error VaultFactory__VaultImplementationNotSet(VaultType vType);
@@ -18,7 +19,7 @@ interface IVaultFactory {
         Oracle
     }
 
-    enum StrategyType {Simple}
+    enum StrategyType {Default}
 
     event VaultCreated(
         VaultType indexed vType,
@@ -69,13 +70,17 @@ interface IVaultFactory {
 
     function setDefaultOperator(address defaultOperator) external;
 
+    function setOperator(IStrategy strategy, address operator) external;
+
+    function setStrategistFee(IStrategy strategy, uint256 strategistFee) external;
+
     function setFeeRecipient(address feeRecipient) external;
 
-    function createOracleVaultAndSimpleStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+    function createOracleVaultAndDefaultStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
         external
         returns (address vault, address strategy);
 
-    function createSimpleVaultAndSimpleStrategy(ILBPair lbPair) external returns (address vault, address strategy);
+    function createSimpleVaultAndDefaultStrategy(ILBPair lbPair) external returns (address vault, address strategy);
 
     function createOracleVault(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
         external
@@ -83,5 +88,5 @@ interface IVaultFactory {
 
     function createSimpleVault(ILBPair lbPair) external returns (address vault);
 
-    function createSimpleStrategy(address vault) external returns (address strategy);
+    function createDefaultStrategy(address vault) external returns (address strategy);
 }
