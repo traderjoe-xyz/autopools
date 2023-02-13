@@ -7,19 +7,27 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 interface IStrategy {
     error Strategy__OnlyFactory();
-    error Strategy__Unhautorized();
+    error Strategy__OnlyVault();
+    error Strategy__OnlyOperators();
     error Strategy__InvalidDistribution();
+    error Strategy__ZeroAmounts();
     error Strategy__SwapFailed();
     error Strategy__InvalidData();
-    error Strategy__InvalidSrcToken();
     error Strategy__InvalidDstToken();
     error Strategy__InvalidReceiver();
     error Strategy__InvalidPrice();
     error Strategy__InvalidRange();
     error Strategy__InvalidRemovedRange();
     error Strategy__InvalidAddedRange();
+    error Strategy__InvalidFee();
 
     event OperatorSet(address operator);
+
+    event StrategistFeeSet(uint256 fee);
+
+    event FeesCollected(
+        address indexed sender, address indexed feeRecipient, uint256 vaultX, uint256 vaultY, uint256 feeX, uint256 feeY
+    );
 
     function getVault() external pure returns (address);
 
@@ -39,24 +47,40 @@ interface IStrategy {
 
     function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
 
+    function initialize() external;
+
     function withdraw(uint256 shares, uint256 totalSupply, address to)
         external
         returns (uint256 amountX, uint256 amountY);
 
-    function expandRange(
-        uint24 addedLow,
+    function depositToLB(
+        uint24 addedLower,
         uint24 addedUpper,
         uint256[] calldata distributionX,
         uint256[] calldata distributionY,
-        uint256 amountX,
-        uint256 amountY
+        uint256 percentageToAddX,
+        uint256 percentageToAddY
     ) external;
 
-    function shrinkRange(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove) external;
+    function withdrawFromLB(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove) external;
+
+    function rebalanceFromLB(
+        uint24 removedLow,
+        uint24 removedUpper,
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint256[] calldata distributionX,
+        uint256[] calldata distributionY,
+        uint256 percentageToRemove,
+        uint256 percentageToAddX,
+        uint256 percentageToAddY
+    ) external;
 
     function collectFees() external;
 
     function swap(bytes memory data) external;
 
     function setOperator(address operator) external;
+
+    function setStrategistFee(uint256 fee) external;
 }

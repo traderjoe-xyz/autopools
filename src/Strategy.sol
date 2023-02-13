@@ -9,19 +9,23 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {LiquidityAmounts} from "joe-v2-periphery/periphery/LiquidityAmounts.sol";
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
 import {Encoded} from "./libraries/Encoded.sol";
+import {Math} from "./libraries/Math.sol";
+import {Range} from "./libraries/Range.sol";
 
-contract Strategy is Clone, IStrategy {
+contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using LiquidityAmounts for address;
     using Encoded for bytes32;
+    using Math for uint256;
+    using Range for uint24;
 
-    address private constant ONE_INCH_ROUTER = 0x1111111254EEB25477B68fb85Ed929f73A960582;
+    address private constant _ONE_INCH_ROUTER = 0x1111111254EEB25477B68fb85Ed929f73A960582;
 
     uint256 private constant _PRECISION = 1e18;
     uint256 private constant _BASIS_POINTS = 1e4;
@@ -29,7 +33,7 @@ contract Strategy is Clone, IStrategy {
     uint256 private constant _OFFSET_LOWER_RANGE = 0;
     uint256 private constant _OFFSET_UPPER_RANGE = 24;
     uint256 private constant _OFFSET_STRATEGIST_FEE = 48;
-    uint256 private constant _OFFSET_OPERATOR = 54;
+    uint256 private constant _OFFSET_OPERATOR = 64;
 
     bytes32 private _parameters;
 
@@ -41,41 +45,27 @@ contract Strategy is Clone, IStrategy {
     }
 
     modifier onlyVault() {
-        if (msg.sender != _vault()) revert Strategy__OnlyFactory();
+        if (msg.sender != _vault()) revert Strategy__OnlyVault();
         _;
     }
 
     modifier onlyOperators() {
         address operator = _decodeOperator(_parameters);
-        if (msg.sender != operator || msg.sender != _factory.getDefaultOperator()) revert Strategy__Unhautorized();
-        _;
-    }
-
-    modifier onlyValidData(bytes memory data) {
-        if (data.length < 0x84) revert Strategy__InvalidData();
-
-        address srcToken;
-        address dstToken;
-        address dstReceiver;
-
-        assembly {
-            srcToken := mload(add(data, 0x24))
-            dstToken := mload(add(data, 0x44))
-            dstReceiver := mload(add(data, 0x64))
-        }
-
-        address tokenX = address(_tokenX());
-        address tokenY = address(_tokenY());
-
-        if (srcToken != tokenX && srcToken != tokenY) revert Strategy__InvalidSrcToken();
-        if (dstToken != tokenX && dstToken != tokenY) revert Strategy__InvalidDstToken();
-        if (dstReceiver != address(this)) revert Strategy__InvalidReceiver();
-
+        if (msg.sender != operator && msg.sender != _factory.getDefaultOperator()) revert Strategy__OnlyOperators();
         _;
     }
 
     constructor(IVaultFactory factory) {
         _factory = factory;
+
+        _disableInitializers();
+    }
+
+    function initialize() external initializer {
+        __ReentrancyGuard_init();
+
+        IERC20Upgradeable(_tokenX()).approve(_ONE_INCH_ROUTER, type(uint256).max);
+        IERC20Upgradeable(_tokenY()).approve(_ONE_INCH_ROUTER, type(uint256).max);
     }
 
     function getVault() external pure override returns (address) {
@@ -94,8 +84,8 @@ contract Strategy is Clone, IStrategy {
         return _tokenY();
     }
 
-    function getRange() external view override returns (uint24 low, uint24 upper) {
-        (low, upper) = _decodeRange(_parameters);
+    function getRange() external view override returns (uint24 lower, uint24 upper) {
+        (lower, upper) = _decodeRange(_parameters);
     }
 
     function getOperator() external view override returns (address operator) {
@@ -107,12 +97,19 @@ contract Strategy is Clone, IStrategy {
     }
 
     function getPendingFees() external view override returns (uint256 amountX, uint256 amountY) {
-        (uint24 low, uint24 upper) = _decodeRange(_parameters);
-        return _getPendingFees(_getIds(low, upper));
+        (uint24 lower, uint24 upper) = _decodeRange(_parameters);
+        return upper == 0 ? (0, 0) : _getPendingFees(_getIds(lower, upper));
     }
 
     function getStrategistFee() external view override returns (uint256) {
         return _decodeStrategistFee(_parameters);
+    }
+
+    function collectFees() external override {
+        bytes32 parameters = _parameters;
+
+        (uint24 lower, uint24 upper) = _decodeRange(parameters);
+        if (upper > 0) _collectFees(_getIds(lower, upper), _decodeStrategistFee(parameters));
     }
 
     function withdraw(uint256 shares, uint256 totalShares, address to)
@@ -123,56 +120,82 @@ contract Strategy is Clone, IStrategy {
     {
         bytes32 parameters = _parameters;
 
-        (uint24 low, uint24 upper) = _decodeRange(parameters);
-        (amountX, amountY) = _withdraw(low, upper, shares, totalShares, _decodeStrategistFee(parameters));
+        (uint24 lower, uint24 upper) = _decodeRange(parameters);
+        (amountX, amountY) = _withdraw(lower, upper, shares, totalShares, _decodeStrategistFee(parameters));
 
         _tokenX().safeTransfer(to, amountX);
         _tokenY().safeTransfer(to, amountY);
     }
 
-    function expandRange(
-        uint24 addedLow,
+    function depositToLB(
+        uint24 addedLower,
         uint24 addedUpper,
         uint256[] calldata distributionX,
         uint256[] calldata distributionY,
-        uint256 amountX,
-        uint256 amountY
+        uint256 percentageToAddX,
+        uint256 percentageToAddY
     ) external override onlyOperators {
-        uint256 delta = addedUpper - addedLow + 1;
-        if (distributionX.length != delta || distributionY.length != delta) revert Strategy__InvalidDistribution();
+        _parameters = _expand(_parameters, addedLower, addedUpper);
 
-        _parameters = _expand(_parameters, addedLow, addedUpper);
+        uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
+        uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
 
-        uint256[] memory ids = _getIds(addedLow, addedUpper);
-
-        _tokenX().safeTransfer(address(_pair()), amountX);
-        _tokenY().safeTransfer(address(_pair()), amountY);
-
-        ILBPair(_pair()).mint(ids, distributionX, distributionY, address(this));
+        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
     }
 
-    function shrinkRange(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove)
+    function withdrawFromLB(uint24 removedLower, uint24 removedUpper, uint256 percentageToRemove)
         external
         override
         onlyOperators
+        nonReentrant
     {
         bytes32 parameters = _parameters;
 
         uint256 fee = _decodeStrategistFee(parameters);
-        _parameters = _shrink(parameters, removedLow, removedUpper);
+        _parameters = _shrink(parameters, removedLower, removedUpper);
 
-        _withdraw(removedLow, removedUpper, percentageToRemove, _PRECISION, fee);
+        _withdraw(removedLower, removedUpper, percentageToRemove, _PRECISION, fee);
     }
 
-    function collectFees() external override {
+    function rebalanceFromLB(
+        uint24 removedLower,
+        uint24 removedUpper,
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint256[] calldata distributionX,
+        uint256[] calldata distributionY,
+        uint256 percentageToRemove,
+        uint256 percentageToAddX,
+        uint256 percentageToAddY
+    ) external override onlyOperators {
         bytes32 parameters = _parameters;
 
-        (uint24 low, uint24 upper) = _decodeRange(parameters);
-        _collectFees(_getIds(low, upper), _decodeStrategistFee(parameters));
+        uint256 fee = _decodeStrategistFee(parameters);
+        _parameters = _expand(_parameters, addedLower, addedUpper);
+
+        _withdraw(removedLower, removedUpper, percentageToRemove, _PRECISION, fee);
+
+        uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
+        uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
+
+        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
     }
 
-    function swap(bytes memory data) external override onlyValidData(data) onlyOperators {
-        (bool success,) = ONE_INCH_ROUTER.call(data);
+    function swap(bytes memory data) external override onlyOperators {
+        if (data.length < 0xc4) revert Strategy__InvalidData();
+
+        address dstToken;
+        address dstReceiver;
+
+        assembly {
+            dstToken := mload(add(data, 0x64))
+            dstReceiver := mload(add(data, 0xa4))
+        }
+
+        if (dstToken != address(_tokenX()) && dstToken != address(_tokenY())) revert Strategy__InvalidDstToken();
+        if (dstReceiver != address(this)) revert Strategy__InvalidReceiver();
+
+        (bool success,) = _ONE_INCH_ROUTER.call(data);
         if (!success) revert Strategy__SwapFailed();
     }
 
@@ -180,6 +203,14 @@ contract Strategy is Clone, IStrategy {
         _parameters = _encodeOperator(_parameters, operator);
 
         emit OperatorSet(operator);
+    }
+
+    function setStrategistFee(uint256 fee) external override onlyFactory {
+        if (fee > _BASIS_POINTS) revert Strategy__InvalidFee();
+
+        _parameters = _encodeStrategistFee(_parameters, uint16(fee));
+
+        emit StrategistFeeSet(fee);
     }
 
     /**
@@ -217,14 +248,18 @@ contract Strategy is Clone, IStrategy {
     /**
      * @dev Encodes the range.
      * @param parameters The current encoded parameters
-     * @param low The low end of the range.
+     * @param lower The lower end of the range.
      * @param upper The upper end of the range.
      * @return newParameters The encoded parameters.
      */
-    function _encodeRange(bytes32 parameters, uint24 low, uint24 upper) internal pure returns (bytes32 newParameters) {
-        if (low > upper) revert Strategy__InvalidRange();
+    function _encodeRange(bytes32 parameters, uint24 lower, uint24 upper)
+        internal
+        pure
+        returns (bytes32 newParameters)
+    {
+        if (lower > upper) revert Strategy__InvalidRange();
 
-        newParameters = parameters.set(low, Encoded.MASK_UINT24, _OFFSET_LOWER_RANGE);
+        newParameters = parameters.set(lower, Encoded.MASK_UINT24, _OFFSET_LOWER_RANGE);
         newParameters = newParameters.set(upper, Encoded.MASK_UINT24, _OFFSET_UPPER_RANGE);
     }
 
@@ -255,11 +290,11 @@ contract Strategy is Clone, IStrategy {
     /**
      * @dev Decodes the range.
      * @param parameters The encoded parameters.
-     * @return low The low end of the range.
+     * @return lower The lower end of the range.
      * @return upper The upper end of the range.
      */
-    function _decodeRange(bytes32 parameters) internal pure returns (uint24 low, uint24 upper) {
-        low = parameters.decodeUint24(_OFFSET_LOWER_RANGE);
+    function _decodeRange(bytes32 parameters) internal pure returns (uint24 lower, uint24 upper) {
+        lower = parameters.decodeUint24(_OFFSET_LOWER_RANGE);
         upper = parameters.decodeUint24(_OFFSET_UPPER_RANGE);
     }
 
@@ -286,29 +321,15 @@ contract Strategy is Clone, IStrategy {
      * The added range must be outside the existing range and adjacent to the existing range.
      * If the new range is completely inside the existing range, the existing range will be returned.
      * @param parameters The current encoded parameters.
-     * @param addedLow The low end of the range to add.
+     * @param addedLower The lower end of the range to add.
      * @param addedUpper The upper end of the range to add.
      * @return The new encoded range.
      */
-    function _expand(bytes32 parameters, uint24 addedLow, uint24 addedUpper) internal pure returns (bytes32) {
-        (uint24 previousLow, uint24 previousUpper) = _decodeRange(parameters);
-        if (previousUpper == 0) return _encodeRange(parameters, addedLow, addedUpper);
+    function _expand(bytes32 parameters, uint24 addedLower, uint24 addedUpper) internal pure returns (bytes32) {
+        (uint24 previousLower, uint24 previousUpper) = _decodeRange(parameters);
+        (uint256 newLower, uint256 newUpper) = previousLower.expands(previousUpper, addedLower, addedUpper);
 
-        if (previousLow <= addedLow && previousUpper >= addedUpper) return parameters;
-
-        if (
-            (addedLow >= previousLow || uint256(addedUpper) + 1 != previousLow)
-                && (addedLow != uint256(previousUpper) + 1 || addedUpper <= previousUpper)
-        ) {
-            revert Strategy__InvalidAddedRange();
-        }
-
-        unchecked {
-            uint24 newLow = addedLow == previousUpper + 1 ? previousLow : addedLow;
-            uint24 newUpper = addedUpper + 1 == previousLow ? previousUpper : addedUpper;
-
-            return _encodeRange(parameters, newLow, newUpper);
-        }
+        return _encodeRange(parameters, uint24(newLower), uint24(newUpper));
     }
 
     /**
@@ -316,61 +337,30 @@ contract Strategy is Clone, IStrategy {
      * The removed range must be inside the existing range and adjacent to the existing range.
      * If the removed range is the same as the existing range, the zero range will be returned.
      * @param parameters The current encoded parameters.
-     * @param removedLow The low end of the range to remove.
+     * @param removedLower The lower end of the range to remove.
      * @param removedUpper The upper end of the range to remove.
      * @return The new encoded range.
      */
-    function _shrink(bytes32 parameters, uint24 removedLow, uint24 removedUpper) internal pure returns (bytes32) {
-        (uint24 previousLow, uint24 previousUpper) = _decodeRange(parameters);
+    function _shrink(bytes32 parameters, uint24 removedLower, uint24 removedUpper) internal pure returns (bytes32) {
+        (uint24 previousLower, uint24 previousUpper) = _decodeRange(parameters);
+        (uint256 newLower, uint256 newUpper) = previousLower.shrinks(previousUpper, removedLower, removedUpper);
 
-        if (removedLow == previousLow && removedUpper == previousUpper) return _encodeRange(parameters, 0, 0);
-
-        if (
-            (removedLow <= previousLow || removedUpper != previousUpper)
-                && (removedLow != previousLow || removedUpper >= previousUpper)
-        ) {
-            revert Strategy__InvalidRemovedRange();
-        }
-
-        uint24 newLow = removedLow == previousLow ? uint24(_min(removedUpper + 1, previousUpper)) : previousLow;
-        uint24 newUpper = removedUpper == previousUpper ? uint24(_max(removedLow - 1, previousLow)) : previousUpper;
-
-        return _encodeRange(parameters, newLow, newUpper);
-    }
-
-    /**
-     * @dev Returns the minimum of two numbers.
-     * @param a The first number.
-     * @param b The second number.
-     * @return The minimum of the two numbers.
-     */
-    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    /**
-     * @dev Returns the maximum of two numbers.
-     * @param a The first number.
-     * @param b The second number.
-     * @return The maximum of the two numbers.
-     */
-    function _max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a > b ? a : b;
+        return _encodeRange(parameters, uint24(newLower), uint24(newUpper));
     }
 
     /**
      * @dev Returns the ids of the tokens in the range.
-     * @param low The low end of the range.
+     * @param lower The lower end of the range.
      * @param upper The upper end of the range.
      * @return ids The ids of the tokens in the range.
      */
-    function _getIds(uint24 low, uint24 upper) internal pure returns (uint256[] memory ids) {
-        uint256 delta = upper - low + 1;
+    function _getIds(uint24 lower, uint24 upper) internal pure returns (uint256[] memory ids) {
+        uint256 delta = upper - lower + 1;
 
         ids = new uint256[](delta);
 
         for (uint256 i; i < delta;) {
-            ids[i] = low + i;
+            ids[i] = lower + i;
 
             unchecked {
                 ++i;
@@ -384,21 +374,59 @@ contract Strategy is Clone, IStrategy {
      * @return amountY The balance of token Y.
      */
     function _getBalances() internal view returns (uint256 amountX, uint256 amountY) {
-        amountX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
-        amountY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
+        IERC20Upgradeable tokenX = _tokenX();
+        IERC20Upgradeable tokenY = _tokenY();
 
-        (uint24 low, uint24 upper) = _decodeRange(_parameters);
-        uint256[] memory ids = _getIds(low, upper);
+        address vault = _vault();
 
-        (uint256 depositedX, uint256 depositedY) = address(this).getAmountsOf(ids, address(_pair()));
-        (uint256 feesX, uint256 feesY) = _getPendingFees(ids);
+        amountX = tokenX.balanceOf(address(this)) + tokenX.balanceOf(vault);
+        amountY = tokenY.balanceOf(address(this)) + tokenY.balanceOf(vault);
 
-        amountX += depositedX + feesX;
-        amountY += depositedY + feesY;
+        (uint24 lower, uint24 upper) = _decodeRange(_parameters);
+
+        if (upper != 0) {
+            uint256[] memory ids = _getIds(lower, upper);
+
+            (uint256 depositedX, uint256 depositedY) = address(vault).getAmountsOf(ids, address(_pair()));
+            (uint256 feesX, uint256 feesY) = _getPendingFees(ids);
+
+            amountX += depositedX + feesX;
+            amountY += depositedY + feesY;
+        }
     }
 
     function _getPendingFees(uint256[] memory ids) internal view returns (uint256 feesX, uint256 feesY) {
-        (feesX, feesY) = _pair().pendingFees(address(this), ids);
+        (feesX, feesY) = _pair().pendingFees(address(_vault()), ids);
+    }
+
+    /**
+     * @dev Deposits tokens into the pair.
+     * @param addedLower The lower end of the range to add.
+     * @param addedUpper The upper end of the range to add.
+     * @param distributionX The distribution of token X.
+     * @param distributionY The distribution of token Y.
+     * @param amountX The amount of token X to deposit.
+     * @param amountY The amount of token Y to deposit.
+     */
+    function _depositToLB(
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint256[] memory distributionX,
+        uint256[] memory distributionY,
+        uint256 amountX,
+        uint256 amountY
+    ) internal {
+        uint256 delta = addedUpper - addedLower + 1;
+
+        if (distributionX.length != delta || distributionY.length != delta) revert Strategy__InvalidDistribution();
+        if (amountX == 0 && amountY == 0) revert Strategy__ZeroAmounts();
+
+        address pair = address(_pair());
+
+        if (amountX > 0) _tokenX().safeTransfer(pair, amountX);
+        if (amountY > 0) _tokenY().safeTransfer(pair, amountY);
+
+        ILBPair(pair).mint(_getIds(addedLower, addedUpper), distributionX, distributionY, _vault());
     }
 
     /**
@@ -407,57 +435,102 @@ contract Strategy is Clone, IStrategy {
      * @param fee The share of the collected fees to send to the fee recipient.
      */
     function _collectFees(uint256[] memory ids, uint256 fee) internal {
-        (uint256 amountX, uint256 amountY) = _pair().collectFees(address(this), ids);
+        address vault = _vault();
+        ILBPair pair = _pair();
 
-        if (fee > 0) {
-            (uint256 feeX, uint256 feeY) = (amountX * fee / _BASIS_POINTS, amountY * fee / _BASIS_POINTS);
+        (uint256 pendingX, uint256 pendingY) = pair.pendingFees(vault, ids);
+        if (pendingX > 0 || pendingY > 0) _pair().collectFees(vault, ids);
 
-            if (feeX == 0 && feeY == 0) return;
+        (IERC20Upgradeable tokenX, IERC20Upgradeable tokenY) = (_tokenX(), _tokenY());
+        (uint256 vaultX, uint256 vaultY) = (tokenX.balanceOf(vault), tokenY.balanceOf(vault));
 
-            address feeRecipient = _factory.getFeeRecipient();
+        uint256 feeX;
+        uint256 feeY;
 
-            if (feeX > 0) _tokenX().safeTransfer(feeRecipient, feeX);
-            if (feeY > 0) _tokenX().safeTransfer(feeRecipient, feeY);
+        address feeRecipient = _factory.getFeeRecipient();
 
-            amountX -= feeX;
-            amountY -= feeY;
+        if (vaultX > 0) {
+            feeX = vaultX * fee / _BASIS_POINTS;
+
+            if (feeX > 0) {
+                vaultX -= feeX;
+                tokenX.safeTransferFrom(vault, feeRecipient, feeX);
+            }
+
+            tokenX.safeTransferFrom(vault, address(this), vaultX);
         }
+
+        if (vaultY > 0) {
+            feeY = vaultY * fee / _BASIS_POINTS;
+
+            if (feeY > 0) {
+                vaultY -= feeY;
+                tokenY.safeTransferFrom(vault, feeRecipient, feeY);
+            }
+
+            tokenY.safeTransferFrom(vault, address(this), vaultY);
+        }
+
+        emit FeesCollected(msg.sender, feeRecipient, vaultX, vaultY, feeX, feeY);
     }
 
-    function _withdraw(uint24 removedLow, uint24 removedUpper, uint256 shares, uint256 totalShares, uint256 fee)
+    function _withdraw(uint24 removedLower, uint24 removedUpper, uint256 shares, uint256 totalShares, uint256 fee)
         internal
         returns (uint256 amountX, uint256 amountY)
     {
-        uint256 delta = removedUpper - removedLow + 1;
+        if (removedUpper == 0) {
+            uint256 balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
+            uint256 balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
 
-        uint256[] memory ids = new uint256[](delta);
-        uint256[] memory amounts = new uint256[](delta);
+            return (shares * balanceX / totalShares, shares * balanceY / totalShares);
+        } else {
+            uint256 delta = removedUpper - removedLower + 1;
 
-        address pair = address(_pair());
+            uint256[] memory ids = new uint256[](delta);
+            uint256[] memory amounts = new uint256[](delta);
 
-        for (uint256 i; i < delta;) {
-            uint256 id = removedLow + i;
+            address pair = address(_pair());
+            address vault = _vault();
 
-            ids[i] = id;
-            amounts[i] = shares * ILBToken(pair).balanceOf(address(this), id) / totalShares;
+            uint256 length = 0;
+            for (uint256 i; i < delta;) {
+                uint256 id = removedLower + i;
+                uint256 amount = shares * ILBToken(pair).balanceOf(vault, id) / totalShares;
 
-            unchecked {
-                ++i;
+                if (amount != 0) {
+                    ids[length] = id;
+                    amounts[length] = amount;
+
+                    unchecked {
+                        ++length;
+                    }
+                }
+
+                unchecked {
+                    ++i;
+                }
             }
+
+            if (length != delta) {
+                assembly {
+                    mstore(ids, length)
+                    mstore(amounts, length)
+                }
+            }
+
+            ILBToken(pair).safeBatchTransferFrom(vault, pair, ids, amounts);
+            _collectFees(new uint256[](0), fee);
+
+            uint256 balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
+            uint256 balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
+
+            ILBPair(pair).burn(ids, amounts, address(this));
+
+            amountX = IERC20Upgradeable(_tokenX()).balanceOf(address(this)) - balanceX;
+            amountY = IERC20Upgradeable(_tokenY()).balanceOf(address(this)) - balanceY;
+
+            amountX += shares * balanceX / totalShares;
+            amountY += shares * balanceY / totalShares;
         }
-
-        ILBToken(pair).safeBatchTransferFrom(address(this), pair, ids, amounts);
-        _collectFees(new uint256[](0), fee);
-
-        uint256 balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
-        uint256 balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
-
-        ILBPair(pair).burn(ids, amounts, address(this));
-
-        amountX = balanceX - IERC20Upgradeable(_tokenX()).balanceOf(address(this));
-        amountY = balanceY - IERC20Upgradeable(_tokenY()).balanceOf(address(this));
-
-        amountX += shares * balanceX / totalShares;
-        amountY += shares * balanceY / totalShares;
     }
 }
