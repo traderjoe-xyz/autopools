@@ -5,7 +5,7 @@ pragma solidity 0.8.10;
 /**
  * @title Range library
  * @author Trader Joe
- * @notice Provides functions for manipulating continuous ranges.
+ * @notice This library is used to perform operations on ranges.
  */
 library Range {
     error Range__InvalidRange();
