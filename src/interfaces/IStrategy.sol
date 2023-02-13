@@ -67,11 +67,11 @@ interface IStrategy {
     function rebalanceFromLB(
         uint24 removedLow,
         uint24 removedUpper,
+        uint256 percentageToRemove,
         uint24 addedLower,
         uint24 addedUpper,
         uint256[] calldata distributionX,
         uint256[] calldata distributionY,
-        uint256 percentageToRemove,
         uint256 percentageToAddX,
         uint256 percentageToAddY
     ) external;

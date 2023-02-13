@@ -160,20 +160,22 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     function rebalanceFromLB(
         uint24 removedLower,
         uint24 removedUpper,
+        uint256 percentageToRemove,
         uint24 addedLower,
         uint24 addedUpper,
         uint256[] calldata distributionX,
         uint256[] calldata distributionY,
-        uint256 percentageToRemove,
         uint256 percentageToAddX,
         uint256 percentageToAddY
     ) external override onlyOperators {
         bytes32 parameters = _parameters;
-
         uint256 fee = _decodeStrategistFee(parameters);
-        _parameters = _expand(_parameters, addedLower, addedUpper);
+
+        parameters = _shrink(parameters, removedLower, removedUpper);
 
         _withdraw(removedLower, removedUpper, percentageToRemove, _PRECISION, fee);
+
+        parameters = _expand(parameters, addedLower, addedUpper);
 
         uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
         uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
