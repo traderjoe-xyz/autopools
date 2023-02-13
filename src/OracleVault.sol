@@ -34,11 +34,43 @@ contract OracleVault is BaseVault, IOracleVault {
     constructor(IVaultFactory factory) BaseVault(factory) {}
 
     /**
+     * @dev Returns the address of the oracle of the token X.
+     * @return oracleX The address of the oracle of the token X.
+     */
+    function getOracleX() external pure override returns (IAggregatorV3 oracleX) {
+        return _dataFeedX();
+    }
+
+    /**
+     * @dev Returns the address of the oracle of the token Y.
+     * @return oracleY The address of the oracle of the token Y.
+     */
+    function getOracleY() external pure override returns (IAggregatorV3 oracleY) {
+        return _dataFeedY();
+    }
+
+    /**
      * @dev Returns the price of token X in token Y, in 128.128 binary fixed point format.
      * @return price The price of token X in token Y in 128.128 binary fixed point format.
      */
     function getPrice() external view override returns (uint256 price) {
         return _getPrice();
+    }
+
+    /**
+     * @dev Returns the decimals of the token X.
+     * @return decimalsX The decimals of the token X.
+     */
+    function _decimalsX() internal pure virtual returns (uint256 decimalsX) {
+        return _getArgUint8(60);
+    }
+
+    /**
+     * @dev Returns the decimals of the token Y.
+     * @return decimalsY The decimals of the token Y.
+     */
+    function _decimalsY() internal pure virtual returns (uint256 decimalsY) {
+        return _getArgUint8(61);
     }
 
     /**
@@ -65,7 +97,7 @@ contract OracleVault is BaseVault, IOracleVault {
     function _getOraclePrice(IAggregatorV3 dataFeed) internal view returns (uint256) {
         (, int256 price,,,) = dataFeed.latestRoundData();
 
-        if (price <= 0) revert OracleVault__InvalidPrice();
+        if (price <= 0 || uint256(price) > type(uint128).max) revert OracleVault__InvalidPrice();
 
         return uint256(price);
     }
@@ -100,25 +132,46 @@ contract OracleVault is BaseVault, IOracleVault {
         override
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY)
     {
-        if (amountX > type(uint128).max || amountY > type(uint128).max) revert OracleVault__AmountsOverflow();
         if (amountX == 0 && amountY == 0) return (0, 0, 0);
 
         uint256 price = _getPrice();
         uint256 totalShares = totalSupply();
 
-        uint256 valueInY = price * amountX + (amountY << _SCALE_OFFSET);
+        uint256 valueInY = _getScaledValueInY(price, amountX, amountY);
 
         if (totalShares == 0) {
             return (valueInY, amountX, amountY);
         }
 
         (uint256 totalX, uint256 totalY) = _getBalances(strategy);
-        if (totalX > type(uint128).max || totalY > type(uint128).max) revert OracleVault__AmountsOverflow();
-
-        uint256 totalValueInY = price * totalX + (totalY << _SCALE_OFFSET);
+        uint256 totalValueInY = _getScaledValueInY(price, totalX, totalY);
 
         shares = valueInY.mulDivRoundDown(totalShares, totalValueInY);
 
         return (shares, amountX, amountY);
+    }
+
+    /**
+     * @dev Returns the scaled value of amounts in token Y.
+     * @param price The price of token X in token Y.
+     * @param amountX The amount of token X.
+     * @param amountY The amount of token Y.
+     * @return valueInY The scaled value of amounts in token Y.
+     */
+    function _getScaledValueInY(uint256 price, uint256 amountX, uint256 amountY)
+        internal
+        pure
+        returns (uint256 valueInY)
+    {
+        unchecked {
+            uint256 scaledY = amountY << _SCALE_OFFSET;
+            uint256 scaledXinY = price * amountX;
+
+            valueInY = scaledXinY + scaledY;
+
+            if (amountY > type(uint128).max || scaledXinY / price != amountX || valueInY < scaledY) {
+                revert OracleVault__AmountsOverflow();
+            }
+        }
     }
 }
