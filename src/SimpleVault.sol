@@ -51,28 +51,31 @@ contract SimpleVault is BaseVault, ISimpleVault {
         if (amountX > type(uint128).max || amountY > type(uint128).max) revert SimpleVault__AmountsOverflow();
 
         uint256 totalShares = totalSupply();
-        (uint256 totalX, uint256 totalY) = _getBalances(strategy);
-        if (totalX > type(uint128).max || totalY > type(uint128).max) revert SimpleVault__AmountsOverflow();
 
         if (totalShares == 0) {
             effectiveX = amountX;
             effectiveY = amountY;
             shares = (amountX.max(amountY)) << _SCALE_OFFSET;
-        } else if (totalX == 0) {
-            effectiveY = amountY;
-            shares = amountY.mulDivRoundDown(totalShares, totalY);
-        } else if (totalY == 0) {
-            effectiveX = amountX;
-            shares = amountX.mulDivRoundDown(totalShares, totalX);
         } else {
-            unchecked {
-                uint256 cross = (amountX * totalY).min(amountY * totalX);
-                if (cross == 0) revert SimpleVault__AmountsOverflow();
+            (uint256 totalX, uint256 totalY) = _getBalances(strategy);
+            if (totalX > type(uint128).max || totalY > type(uint128).max) revert SimpleVault__AmountsOverflow();
 
-                effectiveX = cross.shiftDivRoundUp(_SCALE_OFFSET, totalY);
-                effectiveY = cross.shiftDivRoundUp(_SCALE_OFFSET, totalX);
+            if (totalX == 0) {
+                effectiveY = amountY;
+                shares = amountY.mulDivRoundDown(totalShares, totalY);
+            } else if (totalY == 0) {
+                effectiveX = amountX;
+                shares = amountX.mulDivRoundDown(totalShares, totalX);
+            } else {
+                unchecked {
+                    uint256 cross = (amountX * totalY).min(amountY * totalX);
+                    if (cross == 0) revert SimpleVault__ZeroCross();
 
-                shares = cross.mulDivRoundDown(totalShares, totalX * totalY);
+                    effectiveX = (cross - 1) / totalY + 1;
+                    effectiveY = (cross - 1) / totalX + 1;
+
+                    shares = cross.mulDivRoundDown(totalShares, totalX * totalY);
+                }
             }
         }
     }
