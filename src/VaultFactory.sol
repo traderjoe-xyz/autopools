@@ -23,8 +23,6 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     mapping(VaultType => address[]) private _vaults;
     mapping(StrategyType => address[]) private _strategies;
 
-    mapping(address => address) private _vaultToCurrentStrategy;
-
     mapping(VaultType => address) private _vaultImplementation;
     mapping(StrategyType => address) private _strategyImplementation;
 
@@ -37,11 +35,13 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         _wnative = wnative;
     }
 
-    function initialize() public initializer {
+    function initialize(address owner) external initializer {
         __Ownable2Step_init();
 
-        _setDefaultOperator(msg.sender);
-        _setFeeRecipient(msg.sender);
+        if (owner != msg.sender) _transferOwnership(owner);
+
+        _setDefaultOperator(owner);
+        _setFeeRecipient(owner);
     }
 
     function getWNative() external view override returns (address) {
@@ -100,11 +100,19 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         _setDefaultOperator(defaultOperator);
     }
 
+    function setOperator(IStrategy strategy, address operator) external override onlyOwner {
+        strategy.setOperator(operator);
+    }
+
+    function setStrategistFee(IStrategy strategy, uint256 strategistFee) external override onlyOwner {
+        strategy.setStrategistFee(strategistFee);
+    }
+
     function setFeeRecipient(address feeRecipient) external override onlyOwner {
         _setFeeRecipient(feeRecipient);
     }
 
-    function createOracleVaultAndSimpleStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+    function createOracleVaultAndDefaultStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
         external
         override
         onlyOwner
@@ -114,12 +122,12 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         address tokenY = address(lbPair.tokenY());
 
         vault = _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
-        strategy = _createSimpleStrategy(vault, lbPair, tokenX, tokenY);
+        strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
 
         _linkVaultToStrategy(vault, strategy);
     }
 
-    function createSimpleVaultAndSimpleStrategy(ILBPair lbPair)
+    function createSimpleVaultAndDefaultStrategy(ILBPair lbPair)
         external
         override
         onlyOwner
@@ -129,9 +137,16 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         address tokenY = address(lbPair.tokenY());
 
         vault = _createSimpleVault(lbPair, tokenX, tokenY);
-        strategy = _createSimpleStrategy(vault, lbPair, tokenX, tokenY);
+        strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
 
         _linkVaultToStrategy(vault, strategy);
+    }
+
+    function createSimpleVault(ILBPair lbPair) external override onlyOwner returns (address vault) {
+        address tokenX = address(lbPair.tokenX());
+        address tokenY = address(lbPair.tokenY());
+
+        return _createSimpleVault(lbPair, tokenX, tokenY);
     }
 
     function createOracleVault(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
@@ -146,19 +161,12 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         return _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
     }
 
-    function createSimpleVault(ILBPair lbPair) external override onlyOwner returns (address vault) {
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
-
-        return _createSimpleVault(lbPair, tokenX, tokenY);
-    }
-
-    function createSimpleStrategy(address vault) external onlyOwner returns (address strategy) {
+    function createDefaultStrategy(address vault) external onlyOwner returns (address strategy) {
         ILBPair lbPair = IBaseVault(vault).getPair();
         address tokenX = address(lbPair.tokenX());
         address tokenY = address(lbPair.tokenY());
 
-        return _createSimpleStrategy(vault, lbPair, tokenX, tokenY);
+        return _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
     }
 
     function linkVaultToStrategy(address vault, address strategy) external onlyOwner {
@@ -168,38 +176,28 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     }
 
     function pauseVault(address vault) external onlyOwner {
-        _linkVaultToStrategy(vault, address(0));
+        IBaseVault(vault).pauseVault();
     }
 
-    function recoverERC20(IBaseVault vault, address token, address recipient, uint256 amount) external onlyOwner {
+    function recoverERC20(IBaseVault vault, IERC20Upgradeable token, address recipient, uint256 amount)
+        external
+        onlyOwner
+    {
         vault.recoverERC20(token, recipient, amount);
     }
 
-    function _getName(VaultType vType, ILBPair lbPair, address tokenX, address tokenY)
-        internal
-        view
-        returns (string memory)
-    {
-        string memory prefix;
-        if (vType == VaultType.Simple) {
-            prefix = "LBSimpleVault:";
-        } else if (vType == VaultType.Oracle) {
-            prefix = "LBOracleVault:";
-        } else {
-            revert VaultFactory__InvalidVaultType();
-        }
+    function _getName(VaultType vType, uint256 vaultId) internal pure returns (string memory) {
+        string memory vName;
 
-        return string(
-            abi.encodePacked(
-                prefix,
-                IERC20MetadataUpgradeable(tokenX).symbol(),
-                "/",
-                IERC20MetadataUpgradeable(tokenY).symbol(),
-                "-",
-                uint256(lbPair.feeParameters().binStep).toString(),
-                "bp"
-            )
-        );
+        if (vType == VaultType.Simple) vName = "Simple";
+        else vName = "Oracle";
+
+        return string(abi.encodePacked("Automated Pool Token - ", vName, " Vault #", vaultId.toString()));
+    }
+
+    function _createSimpleVault(ILBPair lbPair, address tokenX, address tokenY) internal returns (address vault) {
+        bytes memory vaultImmutableData = abi.encodePacked(lbPair, tokenX, tokenY);
+        return _createVault(VaultType.Simple, lbPair, tokenX, tokenY, vaultImmutableData);
     }
 
     function _createOracleVault(
@@ -215,15 +213,10 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         bytes memory vaultImmutableData =
             abi.encodePacked(lbPair, tokenX, tokenY, decimalsX, decimalsY, dataFeedX, dataFeedY);
 
-        return _createVault(VaultType.Oracle, lbPair, tokenX, tokenY, vaultImmutableData);
-    }
+        vault = _createVault(VaultType.Oracle, lbPair, tokenX, tokenY, vaultImmutableData);
 
-    function _createSimpleVault(ILBPair lbPair, address tokenX, address tokenY) internal returns (address vault) {
-        uint8 decimalsX = IERC20MetadataUpgradeable(tokenX).decimals();
-        uint8 decimalsY = IERC20MetadataUpgradeable(tokenY).decimals();
-
-        bytes memory vaultImmutableData = abi.encodePacked(lbPair, tokenX, tokenY, decimalsX, decimalsY);
-        return _createVault(VaultType.Simple, lbPair, tokenX, tokenY, vaultImmutableData);
+        // Safety check to ensure the oracles are set correctly
+        IOracleVault(vault).getPrice();
     }
 
     function _createVault(
@@ -241,17 +234,17 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         vault = ClonesWithImmutableArgs.clone(vaultImplementation, vaultImmutableData);
         _vaults[vType].push(vault);
 
-        IBaseVault(vault).initialize(_getName(vType, lbPair, tokenX, tokenY), "APT");
+        IBaseVault(vault).initialize(_getName(vType, vaultId), "APT");
 
         emit VaultCreated(vType, vault, lbPair, vaultId, tokenX, tokenY);
     }
 
-    function _createSimpleStrategy(address vault, ILBPair lbPair, address tokenX, address tokenY)
+    function _createDefaultStrategy(address vault, ILBPair lbPair, address tokenX, address tokenY)
         internal
         returns (address strategy)
     {
         bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY);
-        return _createStrategy(StrategyType.Simple, vault, lbPair, strategyImmutableData);
+        return _createStrategy(StrategyType.Default, vault, lbPair, strategyImmutableData);
     }
 
     function _createStrategy(StrategyType sType, address vault, ILBPair lbPair, bytes memory strategyImmutableData)
@@ -265,6 +258,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
         strategy = ClonesWithImmutableArgs.clone(strategyImplementation, strategyImmutableData);
         _strategies[sType].push(strategy);
+
+        IStrategy(strategy).initialize();
 
         emit StrategyCreated(sType, strategy, vault, lbPair, strategyId);
     }
@@ -282,12 +277,6 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     }
 
     function _linkVaultToStrategy(address vault, address strategy) internal {
-        _vaultToCurrentStrategy[vault] = strategy;
-
-        if (strategy == address(0)) {
-            IBaseVault(vault).pauseVault();
-        } else {
-            IBaseVault(vault).setStrategy(IStrategy(strategy));
-        }
+        IBaseVault(vault).setStrategy(IStrategy(strategy));
     }
 }
