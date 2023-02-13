@@ -3,8 +3,9 @@
 pragma solidity 0.8.10;
 
 import {IAggregatorV3} from "../../src/interfaces/IAggregatorV3.sol";
+import {Ownable} from "openzeppelin/access/Ownable.sol";
 
-contract MockAggregator is IAggregatorV3 {
+contract MockAggregator is Ownable, IAggregatorV3 {
     int256 price = 1e18;
 
     function decimals() external pure override returns (uint8) {
@@ -37,7 +38,7 @@ contract MockAggregator is IAggregatorV3 {
         return (0, price, 0, 0, 0);
     }
 
-    function setPrice(int256 _price) external {
+    function setPrice(int256 _price) external onlyOwner {
         price = _price;
     }
 }
