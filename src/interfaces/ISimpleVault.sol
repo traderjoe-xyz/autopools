@@ -10,4 +10,5 @@ import {IBaseVault} from "./IBaseVault.sol";
 
 interface ISimpleVault is IBaseVault {
     error SimpleVault__AmountsOverflow();
+    error SimpleVault__ZeroCross();
 }
