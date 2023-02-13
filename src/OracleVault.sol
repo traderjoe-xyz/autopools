@@ -31,6 +31,10 @@ contract OracleVault is BaseVault, IOracleVault {
 
     uint256 private constant _SCALE_OFFSET = 128;
 
+    /**
+     * @dev Constructor of the contract.
+     * @param factory Address of the factory.
+     */
     constructor(IVaultFactory factory) BaseVault(factory) {}
 
     /**

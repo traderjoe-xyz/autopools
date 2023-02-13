@@ -18,6 +18,17 @@ import {Encoded} from "./libraries/Encoded.sol";
 import {Math} from "./libraries/Math.sol";
 import {Range} from "./libraries/Range.sol";
 
+/**
+ * @title Liquidity Book Strategy contract
+ * @author Trader Joe
+ * @notice This contract is used to interact with the Liquidity Book Pair contract.
+ * It is used to manage the liquidity of the vault.
+ * The immutable data should be encoded as follow:
+ * - 0x00: 20 bytes: The address of the Vault.
+ * - 0x14: 20 bytes: The address of the LB pair.
+ * - 0x28: 20 bytes: The address of the token X.
+ * - 0x3C: 20 bytes: The address of the token Y.
+ */
 contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using LiquidityAmounts for address;
@@ -39,28 +50,44 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
     IVaultFactory private immutable _factory;
 
+    /**
+     * @notice Modifier to check if the caller is the factory.
+     */
     modifier onlyFactory() {
         if (msg.sender != address(_factory)) revert Strategy__OnlyFactory();
         _;
     }
 
+    /**
+     * @notice Modifier to check if the caller is the vault.
+     */
     modifier onlyVault() {
         if (msg.sender != _vault()) revert Strategy__OnlyVault();
         _;
     }
 
+    /**
+     * @notice Modifier to check if the caller is the operator or the default operator.
+     */
     modifier onlyOperators() {
         address operator = _decodeOperator(_parameters);
         if (msg.sender != operator && msg.sender != _factory.getDefaultOperator()) revert Strategy__OnlyOperators();
         _;
     }
 
+    /**
+     * @dev Constructor of the contract.
+     * @param factory The address of the factory.
+     */
     constructor(IVaultFactory factory) {
         _factory = factory;
 
         _disableInitializers();
     }
 
+    /**
+     * @notice Initialize the contract.
+     */
     function initialize() external initializer {
         __ReentrancyGuard_init();
 
@@ -68,47 +95,94 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         IERC20Upgradeable(_tokenY()).approve(_ONE_INCH_ROUTER, type(uint256).max);
     }
 
+    /**
+     * @notice Returns the address of the factory.
+     * @return The address of the factory.
+     */
     function getFactory() external view override returns (IVaultFactory) {
         return _factory;
     }
 
+    /**
+     * @notice Returns the address of the vault.
+     * @return The address of the vault.
+     */
     function getVault() external pure override returns (address) {
         return _vault();
     }
 
+    /**
+     * @notice Returns the address of the pair.
+     * @return The address of the pair.
+     */
     function getPair() external pure override returns (ILBPair) {
         return _pair();
     }
 
+    /**
+     * @notice Returns the address of the token X.
+     * @return The address of the token X.
+     */
     function getTokenX() external pure override returns (IERC20Upgradeable) {
         return _tokenX();
     }
 
+    /**
+     * @notice Returns the address of the token Y.
+     * @return The address of the token Y.
+     */
     function getTokenY() external pure override returns (IERC20Upgradeable) {
         return _tokenY();
     }
 
+    /**
+     * @notice Returns the range of the strategy.
+     * @return lower The lower bound of the range.
+     * @return upper The upper bound of the range.
+     */
     function getRange() external view override returns (uint24 lower, uint24 upper) {
         (lower, upper) = _decodeRange(_parameters);
     }
 
+    /**
+     * @notice Returns the operator of the strategy.
+     * @return operator The operator of the strategy.
+     */
     function getOperator() external view override returns (address operator) {
         operator = _decodeOperator(_parameters);
     }
 
+    /**
+     * @notice Returns the balances of the strategy.
+     * @return amountX The amount of token X.
+     * @return amountY The amount of token Y.
+     */
     function getBalances() external view override returns (uint256 amountX, uint256 amountY) {
         return _getBalances();
     }
 
+    /**
+     * @notice Returns the pending fees of the strategy.
+     * @return amountX The amount of token X.
+     * @return amountY The amount of token Y.
+     */
     function getPendingFees() external view override returns (uint256 amountX, uint256 amountY) {
         (uint24 lower, uint24 upper) = _decodeRange(_parameters);
         return upper == 0 ? (0, 0) : _getPendingFees(_getIds(lower, upper));
     }
 
+    /**
+     * @notice Returns the strategist fee of the strategy.
+     * This is the fee that is taken on the fees collected by the strategy from LB.
+     * @return strategistFee The strategist fee of the strategy.
+     */
     function getStrategistFee() external view override returns (uint256) {
         return _decodeStrategistFee(_parameters);
     }
 
+    /**
+     * @notice Collect the fees from the LB pool.
+     */
     function collectFees() external override {
         bytes32 parameters = _parameters;
 
@@ -116,6 +190,13 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         if (upper > 0) _collectFees(_getIds(lower, upper), _decodeStrategistFee(parameters));
     }
 
+    /**
+     * @notice Withdraw tokens from the strategy and the LB pool.
+     * @dev Only the vault can call this function.
+     * @param shares The amount of shares to withdraw.
+     * @param totalShares The total amount of shares.
+     * @param to The address to send the tokens to.
+     */
     function withdraw(uint256 shares, uint256 totalShares, address to)
         external
         override
@@ -131,6 +212,16 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         _tokenY().safeTransfer(to, amountY);
     }
 
+    /**
+     * @notice Deposit tokens to the LB pool.
+     * @dev Only the operator can call this function.
+     * @param addedLower The lower bound of the range to add.
+     * @param addedUpper The upper bound of the range to add.
+     * @param distributionX The distribution of token X.
+     * @param distributionY The distribution of token Y.
+     * @param percentageToAddX The percentage of token X to add.
+     * @param percentageToAddY The percentage of token Y to add.
+     */
     function depositToLB(
         uint24 addedLower,
         uint24 addedUpper,
@@ -147,6 +238,13 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
     }
 
+    /**
+     * @notice Withdraw tokens from the LB pool.
+     * @dev Only the operator can call this function.
+     * @param removedLower The lower bound of the range to remove.
+     * @param removedUpper The upper bound of the range to remove.
+     * @param percentageToRemove The percentage of tokens to remove.
+     */
     function withdrawFromLB(uint24 removedLower, uint24 removedUpper, uint256 percentageToRemove)
         external
         override
@@ -161,6 +259,19 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         _withdraw(removedLower, removedUpper, percentageToRemove, _PRECISION, fee);
     }
 
+    /**
+     * @notice Rebalance the strategy.
+     * @dev Only the operator can call this function.
+     * @param removedLower The lower bound of the range to remove.
+     * @param removedUpper The upper bound of the range to remove.
+     * @param percentageToRemove The percentage of tokens to remove.
+     * @param addedLower The lower bound of the range to add.
+     * @param addedUpper The upper bound of the range to add.
+     * @param distributionX The distribution of token X.
+     * @param distributionY The distribution of token Y.
+     * @param percentageToAddX The percentage of token X to add.
+     * @param percentageToAddY The percentage of token Y to add.
+     */
     function rebalanceFromLB(
         uint24 removedLower,
         uint24 removedUpper,
@@ -187,6 +298,11 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
     }
 
+    /**
+     * @notice Swap tokens using 1inch.
+     * @dev Only the operator can call this function.
+     * @param data The data to call the 1inch router with.
+     */
     function swap(bytes memory data) external override onlyOperators {
         if (data.length < 0xc4) revert Strategy__InvalidData();
 
@@ -198,6 +314,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             dstReceiver := mload(add(data, 0xa4))
         }
 
+        // The src token is checked by the approval.
         if (dstToken != address(_tokenX()) && dstToken != address(_tokenY())) revert Strategy__InvalidDstToken();
         if (dstReceiver != address(this)) revert Strategy__InvalidReceiver();
 
@@ -205,12 +322,22 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         if (!success) revert Strategy__SwapFailed();
     }
 
+    /**
+     * @notice Set the operator.
+     * @dev Only the factory can call this function.
+     * @param operator The address of the operator.
+     */
     function setOperator(address operator) external override onlyFactory {
         _parameters = _encodeOperator(_parameters, operator);
 
         emit OperatorSet(operator);
     }
 
+    /**
+     * @notice Set the strategist fee.
+     * @dev Only the factory can call this function.
+     * @param fee The strategist fee.
+     */
     function setStrategistFee(uint256 fee) external override onlyFactory {
         if (fee > _BASIS_POINTS) revert Strategy__InvalidFee();
 
@@ -324,8 +451,6 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
     /**
      * @dev Expands the range. The range will be expanded to include the added range.
-     * The added range must be outside the existing range and adjacent to the existing range.
-     * If the new range is completely inside the existing range, the existing range will be returned.
      * @param parameters The current encoded parameters.
      * @param addedLower The lower end of the range to add.
      * @param addedUpper The upper end of the range to add.
@@ -401,6 +526,12 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         }
     }
 
+    /**
+     * @dev Returns the pending fees of the tokens in the range.
+     * @param ids The ids of the tokens.
+     * @return feesX The pending fees of token X.
+     * @return feesY The pending fees of token Y.
+     */
     function _getPendingFees(uint256[] memory ids) internal view returns (uint256 feesX, uint256 feesY) {
         (feesX, feesY) = _pair().pendingFees(address(_vault()), ids);
     }
@@ -480,6 +611,16 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         emit FeesCollected(msg.sender, feeRecipient, vaultX, vaultY, feeX, feeY);
     }
 
+    /**
+     * @dev Withdraws tokens from the pair.
+     * @param removedLower The lower end of the range to remove.
+     * @param removedUpper The upper end of the range to remove.
+     * @param shares The amount of shares to withdraw.
+     * @param totalShares The total amount of shares.
+     * @param fee The share of the collected fees to send to the fee recipient.
+     * @return amountX The amount of token X withdrawn.
+     * @return amountY The amount of token Y withdrawn.
+     */
     function _withdraw(uint24 removedLower, uint24 removedUpper, uint256 shares, uint256 totalShares, uint256 fee)
         internal
         returns (uint256 amountX, uint256 amountY)
