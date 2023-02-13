@@ -573,9 +573,8 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      */
     function _collectFees(uint256[] memory ids, uint256 fee) internal {
         address vault = _vault();
-        ILBPair pair = _pair();
 
-        (uint256 pendingX, uint256 pendingY) = pair.pendingFees(vault, ids);
+        (uint256 pendingX, uint256 pendingY) = _getPendingFees(ids);
         if (pendingX > 0 || pendingY > 0) _pair().collectFees(vault, ids);
 
         (IERC20Upgradeable tokenX, IERC20Upgradeable tokenY) = (_tokenX(), _tokenY());
