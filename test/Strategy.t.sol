@@ -280,4 +280,106 @@ contract StrategyTest is TestHelper {
         }
         return result;
     }
+
+    function test_RebalanceFromLB() external {
+        uint256 amountX = 1e18;
+        uint256 amountY = 1e18;
+
+        deal(wavax, strategy, amountX);
+        deal(usdc, strategy, amountY);
+
+        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+
+        uint256[] memory distX = new uint256[](3);
+
+        distX[0] = 0;
+        distX[1] = 0.5e18;
+        distX[2] = 0.5e18;
+
+        uint256[] memory distY = new uint256[](3);
+
+        distY[0] = 0.5e18;
+        distY[1] = 0.5e18;
+        distY[2] = 0;
+
+        vm.startPrank(owner);
+        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+
+        distX = new uint256[](5);
+        (distX[0], distX[1], distX[2], distX[3], distX[4]) = (0, 0, 0.5e18, 0.25e18, 0.25e18);
+        distY = new uint256[](5);
+        (distY[0], distY[1], distY[2], distY[3], distY[4]) = (0.25e18, 0.25e18, 0.5e18, 0, 0);
+
+        IStrategy(strategy).rebalanceFromLB(
+            uint24(activeId) - 1,
+            uint24(activeId) + 1,
+            1e18,
+            uint24(activeId) - 2,
+            uint24(activeId) + 2,
+            distX,
+            distY,
+            1e18,
+            1e18
+        );
+        vm.stopPrank();
+
+        uint256[] memory amounts = new uint256[](5);
+
+        for (uint256 i = 0; i < 5; i++) {
+            amounts[i] = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 2 + i);
+        }
+
+        assertApproxEqRel(amounts[0], amounts[1], 1e16, "test_RebalanceFromLB::1");
+        assertApproxEqRel(amounts[3], amounts[4], 1e16, "test_RebalanceFromLB::2");
+
+        assertApproxEqRel(
+            amounts[2], amounts[0] + amounts[1] + amounts[3] + amounts[4], 1e16, "test_RebalanceFromLB::3"
+        );
+    }
+
+    function test_RebalanceFromLBFar() external {
+        uint256 amountX = 1e18;
+        uint256 amountY = 1e18;
+
+        deal(wavax, strategy, amountX);
+        deal(usdc, strategy, amountY);
+
+        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+
+        uint256[] memory distX = new uint256[](3);
+
+        distX[0] = 0;
+        distX[1] = 0.5e18;
+        distX[2] = 0.5e18;
+
+        uint256[] memory distY = new uint256[](3);
+
+        distY[0] = 0.5e18;
+        distY[1] = 0.5e18;
+        distY[2] = 0;
+
+        vm.startPrank(owner);
+        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+
+        (distX[0], distX[1], distX[2]) = (0, 0, 0);
+        (distY[0], distY[1], distY[2]) = (0.5e18, 0.25e18, 0.25e18);
+
+        IStrategy(strategy).rebalanceFromLB(
+            uint24(activeId) - 1,
+            uint24(activeId) + 1,
+            1e18,
+            uint24(activeId) - 100,
+            uint24(activeId) - 98,
+            distX,
+            distY,
+            1e18,
+            1e18
+        );
+        vm.stopPrank();
+
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 100 + i);
+            assertApproxEqRel(amount, distY[i] * 1e18 / 1e18, 1e14, "test_RebalanceFromLBFar::1");
+        }
+    }
 }
