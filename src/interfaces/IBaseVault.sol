@@ -6,6 +6,7 @@ import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgr
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 import {IStrategy} from "./IStrategy.sol";
+import {IVaultFactory} from "./IVaultFactory.sol";
 
 interface IBaseVault is IERC20Upgradeable {
     error BaseVault__ZeroAmount();
@@ -29,6 +30,8 @@ interface IBaseVault is IERC20Upgradeable {
     event DepositFeeSet(uint256 fee);
 
     event WithdrawalFeeSet(uint256 fee);
+
+    function getFactory() external view returns (IVaultFactory);
 
     function getPair() external view returns (ILBPair);
 

@@ -67,6 +67,14 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
+     * @dev Returns the address of the factory.
+     * @return The address of the factory.
+     */
+    function getFactory() public view virtual override returns (IVaultFactory) {
+        return _factory;
+    }
+
+    /**
      * @dev Returns the address of the pair.
      * @return The address of the pair.
      */

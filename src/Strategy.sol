@@ -68,6 +68,10 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         IERC20Upgradeable(_tokenY()).approve(_ONE_INCH_ROUTER, type(uint256).max);
     }
 
+    function getFactory() external view override returns (IVaultFactory) {
+        return _factory;
+    }
+
     function getVault() external pure override returns (address) {
         return _vault();
     }

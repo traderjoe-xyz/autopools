@@ -5,6 +5,8 @@ pragma solidity 0.8.10;
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
+import {IVaultFactory} from "./IVaultFactory.sol";
+
 interface IStrategy {
     error Strategy__OnlyFactory();
     error Strategy__OnlyVault();
@@ -28,6 +30,8 @@ interface IStrategy {
     event FeesCollected(
         address indexed sender, address indexed feeRecipient, uint256 vaultX, uint256 vaultY, uint256 feeX, uint256 feeY
     );
+
+    function getFactory() external view returns (IVaultFactory);
 
     function getVault() external pure returns (address);
 
