@@ -22,9 +22,9 @@ contract SimpleVaultTest is TestHelper {
     }
 
     function test_GetImmutableData() external {
-        assertEq(address(SimpleVault(vault).getPair()), wavax_usdc_20bp, "test_GetImmutableData::1");
-        assertEq(address(SimpleVault(vault).getTokenX()), wavax, "test_GetImmutableData::2");
-        assertEq(address(SimpleVault(vault).getTokenY()), usdc, "test_GetImmutableData::3");
+        assertEq(address(ISimpleVault(vault).getPair()), wavax_usdc_20bp, "test_GetImmutableData::1");
+        assertEq(address(ISimpleVault(vault).getTokenX()), wavax, "test_GetImmutableData::2");
+        assertEq(address(ISimpleVault(vault).getTokenY()), usdc, "test_GetImmutableData::3");
     }
 
     function test_Operators() external {

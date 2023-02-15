@@ -19,40 +19,40 @@ contract StrategyTest is TestHelper {
     }
 
     function test_GetImmutableData() external {
-        assertEq(address(Strategy(strategy).getVault()), vault, "test_GetImmutableData::1");
-        assertEq(address(Strategy(strategy).getPair()), wavax_usdc_20bp, "test_GetImmutableData::2");
-        assertEq(address(Strategy(strategy).getTokenX()), wavax, "test_GetImmutableData::3");
-        assertEq(address(Strategy(strategy).getTokenY()), usdc, "test_GetImmutableData::4");
+        assertEq(address(IStrategy(strategy).getVault()), vault, "test_GetImmutableData::1");
+        assertEq(address(IStrategy(strategy).getPair()), wavax_usdc_20bp, "test_GetImmutableData::2");
+        assertEq(address(IStrategy(strategy).getTokenX()), wavax, "test_GetImmutableData::3");
+        assertEq(address(IStrategy(strategy).getTokenY()), usdc, "test_GetImmutableData::4");
     }
 
     function test_GetRange() external {
-        (uint24 low, uint24 upper) = Strategy(strategy).getRange();
+        (uint24 low, uint24 upper) = IStrategy(strategy).getRange();
 
         assertEq(low, 0, "test_GetRange::1");
         assertEq(upper, 0, "test_GetRange::2");
     }
 
     function test_GetOperator() external {
-        assertEq(address(Strategy(strategy).getOperator()), address(0), "test_GetOperator::1");
+        assertEq(address(IStrategy(strategy).getOperator()), address(0), "test_GetOperator::1");
 
         vm.prank(owner);
         factory.setOperator(IStrategy(strategy), address(1));
 
-        assertEq(address(Strategy(strategy).getOperator()), address(1), "test_GetOperator::2");
+        assertEq(address(IStrategy(strategy).getOperator()), address(1), "test_GetOperator::2");
 
         vm.prank(owner);
         factory.setOperator(IStrategy(strategy), address(0));
 
-        assertEq(address(Strategy(strategy).getOperator()), address(0), "test_GetOperator::3");
+        assertEq(address(IStrategy(strategy).getOperator()), address(0), "test_GetOperator::3");
     }
 
     function test_revert_SetOperator() external {
         vm.expectRevert(IStrategy.Strategy__OnlyFactory.selector);
-        Strategy(strategy).setOperator(address(1));
+        IStrategy(strategy).setOperator(address(1));
     }
 
     function test_GetBalances() external {
-        (uint256 x, uint256 y) = Strategy(strategy).getBalances();
+        (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
         assertEq(x, 0, "test_GetBalances::1");
         assertEq(y, 0, "test_GetBalances::2");
@@ -60,7 +60,7 @@ contract StrategyTest is TestHelper {
         deal(wavax, strategy, 1e18);
         deal(usdc, strategy, 1e6);
 
-        (x, y) = Strategy(strategy).getBalances();
+        (x, y) = IStrategy(strategy).getBalances();
 
         assertEq(x, 1e18, "test_GetBalances::3");
         assertEq(y, 1e6, "test_GetBalances::4");
@@ -68,31 +68,31 @@ contract StrategyTest is TestHelper {
         deal(wavax, vault, 1e18);
         deal(usdc, vault, 1e6);
 
-        (x, y) = Strategy(strategy).getBalances();
+        (x, y) = IStrategy(strategy).getBalances();
 
         assertEq(x, 2e18, "test_GetBalances::5");
         assertEq(y, 2e6, "test_GetBalances::6");
     }
 
     function test_GetPendingFees() external {
-        (uint256 x, uint256 y) = Strategy(strategy).getPendingFees();
+        (uint256 x, uint256 y) = IStrategy(strategy).getPendingFees();
 
         assertEq(x, 0, "test_GetPendingFees::1");
         assertEq(y, 0, "test_GetPendingFees::2");
     }
 
     function test_GetStrategistFee() external {
-        assertEq(Strategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::1");
+        assertEq(IStrategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::1");
 
         vm.prank(owner);
         factory.setStrategistFee(IStrategy(strategy), 1e4);
 
-        assertEq(Strategy(strategy).getStrategistFee(), 1e4, "test_GetStrategistFee::2");
+        assertEq(IStrategy(strategy).getStrategistFee(), 1e4, "test_GetStrategistFee::2");
 
         vm.prank(owner);
         factory.setStrategistFee(IStrategy(strategy), 0);
 
-        assertEq(Strategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::3");
+        assertEq(IStrategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::3");
     }
 
     function test_revert_SetStrategistFee() external {
@@ -135,7 +135,7 @@ contract StrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
 
-        (uint256 x, uint256 y) = Strategy(strategy).getBalances();
+        (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
         uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
 
         uint256 balancesInY = ((price * x) >> 128) + y;
@@ -190,12 +190,12 @@ contract StrategyTest is TestHelper {
         vm.startPrank(owner);
         IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
 
-        (uint256 x, uint256 y) = Strategy(strategy).getBalances();
+        (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
         IStrategy(strategy).withdrawFromLB(uint24(activeId) - 1, uint24(activeId) + 1, 1e18);
         vm.stopPrank();
 
-        (uint256 x2, uint256 y2) = Strategy(strategy).getBalances();
+        (uint256 x2, uint256 y2) = IStrategy(strategy).getBalances();
 
         assertEq(x2, x, "test_WithdrawFromLb::1");
         assertEq(y2, y, "test_WithdrawFromLb::2");
