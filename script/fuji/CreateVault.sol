@@ -11,13 +11,13 @@ import "../../src/Strategy.sol";
 import "../../test/mocks/MockAggregator.sol";
 
 contract CreateVault is Script {
-    IVaultFactory constant factory = IVaultFactory(0xbe71be995B1a67EfcebfB1F0E8B89b57c603F9C8);
+    IVaultFactory constant factory = IVaultFactory(0xECe167a8623D5ab7f8568842d0fC7dAa422467d6);
 
     function run() public returns (address vault, address strategy) {
         // vm.createSelectFork(stdChains["avalanche"].rpcUrl, 26_179_802);
         vm.createSelectFork(vm.rpcUrl("fuji"));
 
-        ILBPair pair = ILBPair(0x88F36a6B0e37E78d0Fb1d41B07A47BAD3D995453);
+        ILBPair pair = ILBPair(0x8B1B20CcB675f5D221c701ec086dcaDeF1dBb517);
 
         uint256 deployerPrivateKey = vm.envUint("DEPLOY_PRIVATE_KEY");
 

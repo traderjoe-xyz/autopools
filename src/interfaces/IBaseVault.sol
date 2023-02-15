@@ -20,6 +20,7 @@ interface IBaseVault is IERC20Upgradeable {
     error BaseVault__NoNativeToken();
     error BaseVault__InvalidNativeAmount();
     error BaseVault__NativeTransferFailed();
+    error BaseVault__OnlyWNative();
 
     event Deposited(address indexed user, uint256 amountX, uint256 amountY, uint256 shares);
 
@@ -68,6 +69,8 @@ interface IBaseVault is IERC20Upgradeable {
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY);
 
     function withdraw(uint256 shares) external returns (uint256 amountX, uint256 amountY);
+
+    function withdrawNative(uint256 shares) external returns (uint256 amountX, uint256 amountY);
 
     function initialize(string memory name, string memory symbol) external;
 

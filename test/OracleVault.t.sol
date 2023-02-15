@@ -28,10 +28,10 @@ contract OracleVaultTest is TestHelper {
     }
 
     function test_GetOraclePrice() external {
-        assertEq(address(OracleVault(vault).getOracleX()), address(dfX), "test_GetOraclePrice::1");
-        assertEq(address(OracleVault(vault).getOracleY()), address(dfY), "test_GetOraclePrice::2");
+        assertEq(address(IOracleVault(vault).getOracleX()), address(dfX), "test_GetOraclePrice::1");
+        assertEq(address(IOracleVault(vault).getOracleY()), address(dfY), "test_GetOraclePrice::2");
 
-        assertEq(OracleVault(vault).getPrice(), (uint256(1e18 * 1e6) << 128) / (1e18 * 1e18), "test_GetOraclePrice::3");
+        assertEq(IOracleVault(vault).getPrice(), (uint256(1e18 * 1e6) << 128) / (1e18 * 1e18), "test_GetOraclePrice::3");
     }
 
     function testFuzz_revert_GetOraclePriceNegative(int256 priceX, int256 priceY) external {
@@ -67,9 +67,9 @@ contract OracleVaultTest is TestHelper {
     }
 
     function test_GetImmutableData() external {
-        assertEq(address(OracleVault(vault).getPair()), wavax_usdc_20bp, "test_GetImmutableData::1");
-        assertEq(address(OracleVault(vault).getTokenX()), wavax, "test_GetImmutableData::2");
-        assertEq(address(OracleVault(vault).getTokenY()), usdc, "test_GetImmutableData::3");
+        assertEq(address(IOracleVault(vault).getPair()), wavax_usdc_20bp, "test_GetImmutableData::1");
+        assertEq(address(IOracleVault(vault).getTokenX()), wavax, "test_GetImmutableData::2");
+        assertEq(address(IOracleVault(vault).getTokenY()), usdc, "test_GetImmutableData::3");
     }
 
     function test_Operators() external {

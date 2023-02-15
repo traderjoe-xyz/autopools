@@ -57,6 +57,24 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
+     * @dev Receive function. Mainly added to silence the compiler warning.
+     * Highly unlikely to be used as the base vault needs at least 62 bytes of immutable data added to the payload
+     * (3 addresses and 2 bytes of lenths), so this function should never be called.
+     */
+    receive() external payable {
+        if (msg.sender != _wnative) revert BaseVault__OnlyWNative();
+    }
+
+    /**
+     * @notice Allows the contract to receive native tokens from the WNative contract.
+     * @dev We can't use the `receive` function because the immutable clone library adds calldata to the payload
+     * that are taken as a function signature and parameters.
+     */
+    fallback() external payable {
+        if (msg.sender != _wnative) revert BaseVault__OnlyWNative();
+    }
+
+    /**
      * @dev Initializes the contract.
      * @param name The name of the token.
      * @param symbol The symbol of the token.
@@ -184,7 +202,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @return amountY The amount of token Y to be redeemed.
      */
     function previewAmounts(uint256 shares) public view virtual override returns (uint256 amountX, uint256 amountY) {
-        return _previewAmounts(_strategy, shares);
+        return _previewAmounts(_strategy, shares, totalSupply());
     }
 
     /**
@@ -257,14 +275,13 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         // Deposit and send wnative to the strategy.
         if (effectiveNative > 0) {
             IWNative(wnative).deposit{value: effectiveNative}();
-            IWNative(wnative).transfer(address(strategy), effectiveNative);
+            IERC20Upgradeable(wnative).safeTransfer(address(strategy), effectiveNative);
         }
 
         // Refund dust native tokens, if any.
         if (msg.value > effectiveNative) {
             unchecked {
-                (bool success,) = address(msg.sender).call{value: msg.value - effectiveNative}("");
-                if (!success) revert BaseVault__NativeTransferFailed();
+                _transferNative(msg.sender, msg.value - effectiveNative);
             }
         }
     }
@@ -276,29 +293,42 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @return amountY The amount of token Y to be redeemed.
      */
     function withdraw(uint256 shares) public virtual override nonReentrant returns (uint256 amountX, uint256 amountY) {
-        if (shares == 0) revert BaseVault__ZeroShares();
+        return _withdraw(shares, msg.sender);
+    }
 
-        IStrategy strategy = _strategy;
-        uint256 totalShares = totalSupply();
+    /**
+     * @dev Withdraws tokens from the strategy and unwraps the native tokens.
+     * @param shares The amount of shares to be redeemed.
+     * @return amountX The amount of token X to be redeemed.
+     * @return amountY The amount of token Y to be redeemed.
+     */
+    function withdrawNative(uint256 shares)
+        public
+        virtual
+        override
+        nonReentrant
+        returns (uint256 amountX, uint256 amountY)
+    {
+        IERC20Upgradeable tokenX = _tokenX();
+        IERC20Upgradeable tokenY = _tokenY();
 
-        // Check if the strategy is set
-        if (address(strategy) == address(0)) {
-            (amountX, amountY) = _previewAmounts(strategy, shares);
+        address wnative = _wnative;
+        bool isNativeX = address(tokenX) == wnative;
 
-            // Burn the shares
-            _burn(msg.sender, shares);
+        // Check that the native token is one of the tokens of the pair.
+        if (!isNativeX && address(tokenY) != wnative) revert BaseVault__NoNativeToken();
 
-            if (amountX > 0) _tokenX().safeTransfer(msg.sender, amountX);
-            if (amountY > 0) _tokenY().safeTransfer(msg.sender, amountY);
-        } else {
-            // Burn the shares
-            _burn(msg.sender, shares);
+        (amountX, amountY) = _withdraw(shares, address(this));
 
-            // Withdraw the tokens from the strategy and send them to the user
-            (amountX, amountY) = strategy.withdraw(shares, totalShares, msg.sender);
+        uint256 nativeAmount = isNativeX ? amountX : amountY;
+        (IERC20Upgradeable token, uint256 tokenAmount) = isNativeX ? (tokenY, amountY) : (tokenX, amountX);
+
+        if (nativeAmount > 0) {
+            IWNative(wnative).withdraw(nativeAmount);
+            _transferNative(msg.sender, nativeAmount);
         }
 
-        emit Withdrawn(msg.sender, amountX, amountY, shares);
+        if (tokenAmount > 0) token.safeTransfer(msg.sender, tokenAmount);
     }
 
     /**
@@ -425,18 +455,17 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @dev Returns amounts of token X and token Y to be withdrawn.
      * @param strategy The address of the strategy.
      * @param shares The amount of shares to be withdrawn.
+     * @param totalShares The total amount of shares.
      * @return amountX The amount of token X to be withdrawn.
      * @return amountY The amount of token Y to be withdrawn.
      */
-    function _previewAmounts(IStrategy strategy, uint256 shares)
+    function _previewAmounts(IStrategy strategy, uint256 shares, uint256 totalShares)
         internal
         view
         virtual
         returns (uint256 amountX, uint256 amountY)
     {
         if (shares == 0) return (0, 0);
-
-        uint256 totalShares = totalSupply();
 
         if (totalShares == 0 || shares > totalShares) revert BaseVault__InvalidShares();
 
@@ -520,5 +549,47 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         _mint(msg.sender, shares);
 
         emit Deposited(msg.sender, effectiveX, effectiveY, shares);
+    }
+
+    /**
+     * @dev Withdraws the tokens from the strategy and transfers them to the recipient.
+     * @param shares The amount of shares to be withdrawn.
+     * @param recipient The address to receive the tokens.
+     * @return amountX The amount of token X to be withdrawn.
+     * @return amountY The amount of token Y to be withdrawn.
+     */
+    function _withdraw(uint256 shares, address recipient) internal virtual returns (uint256 amountX, uint256 amountY) {
+        if (shares == 0) revert BaseVault__ZeroShares();
+
+        IStrategy strategy = _strategy;
+        uint256 totalShares = totalSupply();
+
+        // Burn the shares
+        _burn(msg.sender, shares);
+
+        // Check if the strategy is set
+        if (address(strategy) == address(0)) {
+            (amountX, amountY) = _previewAmounts(strategy, shares, totalShares);
+
+            if (recipient != address(this)) {
+                if (amountX > 0) _tokenX().safeTransfer(recipient, amountX);
+                if (amountY > 0) _tokenY().safeTransfer(recipient, amountY);
+            }
+        } else {
+            // Withdraw the tokens from the strategy and send them to the user
+            (amountX, amountY) = strategy.withdraw(shares, totalShares, recipient);
+        }
+
+        emit Withdrawn(msg.sender, amountX, amountY, shares);
+    }
+
+    /**
+     * @dev Helper function to transfer native tokens to the recipient.
+     * @param recipient The address to receive the tokens.
+     * @param amount The amount of tokens to be transferred.
+     */
+    function _transferNative(address recipient, uint256 amount) internal virtual {
+        (bool success,) = recipient.call{value: amount}("");
+        if (!success) revert BaseVault__NativeTransferFailed();
     }
 }
