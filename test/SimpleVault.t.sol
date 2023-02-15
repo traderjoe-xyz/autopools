@@ -390,4 +390,114 @@ contract SimpleVaultTest is TestHelper {
         vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
         ISimpleVault(vault).depositNative{value: 2e18}(2e18, 1e18);
     }
+
+    function test_WithdrawNativeAvaxIsX() external {
+        deal(usdc, alice, 1e18);
+        vm.deal(alice, 1e18);
+
+        vm.prank(owner);
+        factory.linkVaultToStrategy(vault, strategy);
+
+        vm.startPrank(alice);
+        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
+
+        ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
+
+        vm.stopPrank();
+
+        deal(usdc, bob, 1e18);
+        vm.deal(bob, 10e18);
+
+        vm.startPrank(bob);
+        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
+
+        (uint256 shares,,) = ISimpleVault(vault).depositNative{value: 10e18}(10e18, 1e18);
+
+        ISimpleVault(vault).withdrawNative(shares);
+        vm.stopPrank();
+
+        assertEq(ISimpleVault(vault).balanceOf(bob), 0, "test_WithdrawNative::1");
+
+        assertEq(IERC20Upgradeable(usdc).balanceOf(bob), 1e18, "test_WithdrawNative::2");
+        assertEq(bob.balance, 10e18, "test_WithdrawNative::3");
+    }
+
+    function test_WithdrawNativeAvaxIsY() external {
+        vm.prank(owner);
+        (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+
+        vm.deal(alice, 1e18);
+        deal(joe, alice, 1e18);
+
+        vm.startPrank(alice);
+        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
+
+        ISimpleVault(nativeIsYVault).depositNative{value: 1e18}(1e18, 1e18);
+        vm.stopPrank();
+
+        deal(joe, bob, 1e18);
+        vm.deal(bob, 10e18);
+
+        vm.startPrank(bob);
+        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
+
+        (uint256 shares,,) = ISimpleVault(nativeIsYVault).depositNative{value: 10e18}(1e18, 10e18);
+
+        ISimpleVault(nativeIsYVault).withdrawNative(shares);
+        vm.stopPrank();
+
+        assertEq(ISimpleVault(nativeIsYVault).balanceOf(bob), 0, "test_WithdrawNative::1");
+
+        assertEq(IERC20Upgradeable(joe).balanceOf(bob), 1e18, "test_WithdrawNative::2");
+        assertEq(bob.balance, 10e18, "test_WithdrawNative::3");
+    }
+
+    function test_revert_WithdrawNative() external {
+        vm.prank(owner);
+        (address noNativeVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(usdt_usdc_1bp));
+
+        vm.expectRevert(IBaseVault.BaseVault__NoNativeToken.selector);
+        ISimpleVault(noNativeVault).withdrawNative(1e18);
+
+        vm.prank(owner);
+        factory.linkVaultToStrategy(vault, strategy);
+
+        deal(usdc, alice, 1e18);
+        vm.deal(alice, 1e18);
+
+        vm.startPrank(alice);
+        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
+
+        (uint256 shares,,) = ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
+        ISimpleVault(vault).transfer(address(this), shares);
+        vm.stopPrank();
+
+        vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
+        ISimpleVault(vault).withdrawNative(shares);
+
+        vm.prank(owner);
+        (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+
+        deal(joe, alice, 1e18);
+        vm.deal(alice, 1e18);
+
+        vm.startPrank(alice);
+        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
+
+        (shares,,) = ISimpleVault(nativeIsYVault).depositNative{value: 1e18}(1e18, 1e18);
+        ISimpleVault(nativeIsYVault).transfer(address(this), shares);
+        vm.stopPrank();
+
+        vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
+        ISimpleVault(nativeIsYVault).withdrawNative(shares);
+    }
+
+    function test_revert_SendEthToVaul() external {
+        vm.expectRevert();
+        payable(vault).transfer(1e18);
+
+        vm.expectRevert(IBaseVault.BaseVault__OnlyWNative.selector);
+        (bool s,) = vault.call{value: 1e18}("");
+        require(s);
+    }
 }
