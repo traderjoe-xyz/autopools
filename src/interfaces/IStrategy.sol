@@ -22,6 +22,8 @@ interface IStrategy {
     error Strategy__InvalidRemovedRange();
     error Strategy__InvalidAddedRange();
     error Strategy__InvalidFee();
+    error Strategy__ActiveIdSlippageExceeded();
+    error Strategy__ActiveIdSlippage();
 
     event OperatorSet(address operator);
 
@@ -57,25 +59,28 @@ interface IStrategy {
         external
         returns (uint256 amountX, uint256 amountY);
 
-    function depositToLB(
+    function depositWithDistributionsToLB(
         uint24 addedLower,
         uint24 addedUpper,
-        uint256[] calldata distributionX,
-        uint256[] calldata distributionY,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory distributionX,
+        uint256[] memory distributionY,
         uint256 percentageToAddX,
         uint256 percentageToAddY
     ) external;
 
     function withdrawFromLB(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove) external;
 
-    function rebalanceFromLB(
+    function rebalanceWithDistributionsFromLB(
         uint24 removedLow,
         uint24 removedUpper,
-        uint256 percentageToRemove,
         uint24 addedLower,
         uint24 addedUpper,
-        uint256[] calldata distributionX,
-        uint256[] calldata distributionY,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory distributionX,
+        uint256[] memory distributionY,
         uint256 percentageToAddX,
         uint256 percentageToAddY
     ) external;

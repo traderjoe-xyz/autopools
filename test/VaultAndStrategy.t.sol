@@ -108,7 +108,7 @@ contract VaultAndStrategyTest is TestHelper {
         assertEq(IOracleVault(vault).balanceOf(alice), 0, "test_WithdrawFromVault::9");
     }
 
-    function test_WithdrawFromVaultAfterDepositToLB() external {
+    function test_WithdrawFromVaultAfterdepositWithDistributionsToLB() external {
         deal(wavax, alice, 1e18);
         deal(usdc, alice, 1e6);
 
@@ -128,7 +128,9 @@ contract VaultAndStrategyTest is TestHelper {
         (distY[0], distY[1], distY[2]) = (0.5e18, 0.5e18, 0);
 
         vm.prank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
@@ -141,7 +143,7 @@ contract VaultAndStrategyTest is TestHelper {
         uint256 receivedInY =
             ((price * IERC20Upgradeable(wavax).balanceOf(alice)) >> 128) + IERC20Upgradeable(usdc).balanceOf(alice);
 
-        assertApproxEqRel(receivedInY, depositInY, 1e15, "test_WithdrawFromVaultAfterDepositToLB::1");
+        assertApproxEqRel(receivedInY, depositInY, 1e15, "test_WithdrawFromVaultAfterdepositWithDistributionsToLB::1");
     }
 
     function test_DepositAndWithdrawFromLbWithFees() external {
@@ -164,7 +166,9 @@ contract VaultAndStrategyTest is TestHelper {
         (distY[0], distY[1], distY[2]) = (0.5e18, 0.5e18, 0);
 
         vm.prank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
@@ -221,7 +225,9 @@ contract VaultAndStrategyTest is TestHelper {
         (distY[0], distY[1], distY[2]) = (1e18, 0, 0);
 
         vm.prank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
@@ -253,7 +259,9 @@ contract VaultAndStrategyTest is TestHelper {
 
         vm.startPrank(owner);
         factory.setStrategistFee(IStrategy(strategy), 0.1e4);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
         vm.stopPrank();
 
         {
@@ -303,7 +311,9 @@ contract VaultAndStrategyTest is TestHelper {
         (distY[0], distY[1], distY[2]) = (0.5e18, 0.5e18, 0);
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         address newStrategy = factory.createDefaultStrategy(vault);
         factory.linkVaultToStrategy(vault, newStrategy);
@@ -338,7 +348,9 @@ contract VaultAndStrategyTest is TestHelper {
         (distY[0], distY[1], distY[2]) = (0.5e18, 0.5e18, 0);
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         factory.pauseVault(vault);
         vm.stopPrank();
