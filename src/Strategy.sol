@@ -10,6 +10,7 @@ import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {LiquidityAmounts} from "joe-v2-periphery/periphery/LiquidityAmounts.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import {BinHelper} from "joe-v2/libraries/BinHelper.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import {IStrategy} from "./interfaces/IStrategy.sol";
@@ -17,6 +18,7 @@ import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
 import {Encoded} from "./libraries/Encoded.sol";
 import {Math} from "./libraries/Math.sol";
 import {Range} from "./libraries/Range.sol";
+import {Distribution} from "./libraries/Distribution.sol";
 
 /**
  * @title Liquidity Book Strategy contract
@@ -28,6 +30,7 @@ import {Range} from "./libraries/Range.sol";
  * - 0x14: 20 bytes: The address of the LB pair.
  * - 0x28: 20 bytes: The address of the token X.
  * - 0x3C: 20 bytes: The address of the token Y.
+ * - 0x50: 1 bytes: The bin step of the lb pair.
  */
 contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
@@ -35,6 +38,8 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using Encoded for bytes32;
     using Math for uint256;
     using Range for uint24;
+    using Distribution for uint256[];
+    using BinHelper for uint256;
 
     address private constant _ONE_INCH_ROUTER = 0x1111111254EEB25477B68fb85Ed929f73A960582;
 
@@ -241,6 +246,34 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
+     * @notice Deposit tokens to the LB pool following the amounts valued in Y.
+     * @dev Only the operator can call this function.
+     * @param addedLower The lower bound of the range to add.
+     * @param addedUpper The upper bound of the range to add.
+     * @param desiredActiveId The desired active id.
+     * @param slippageActiveId The slippage active id.
+     * @param amountsInY The amounts of tokens, valued in Y.
+     * @param maxPercentageToAddX The maximum percentage of token X to add.
+     * @param maxPercentageToAddY The maximum percentage of token Y to add.
+     */
+    function depositWithAmountsToLB(
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory amountsInY,
+        uint256 maxPercentageToAddX,
+        uint256 maxPercentageToAddY
+    ) external onlyOperators {
+        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
+
+        (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
+            _getDistributionsAndAmounts(addedLower, addedUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY);
+
+        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
+    }
+
+    /**
      * @notice Withdraw tokens from the LB pool.
      * @dev Only the operator can call this function.
      * @param removedLower The lower bound of the range to remove.
@@ -294,11 +327,36 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
+     * @notice Rebalance the strategy by depositing and withdrawing tokens from the LB pool.
+     * It will deposit the tokens following the amounts valued in Y.
+     * @dev Only the operator can call this function.
+     * @param removedLower The lower bound of the range to remove.
+     * @param removedUpper The upper bound of the range to remove.
+     * @param addedLower The lower bound of the range to add.
+     * @param addedUpper The upper bound of the range to add.
+     * @param desiredActiveId The desired active id.
+     * @param slippageActiveId The slippage active id.
+     * @param amountsInY The amounts of tokens, valued in Y.
+     * @param maxPercentageToAddX The maximum percentage of token X to add.
+     * @param maxPercentageToAddY The maximum percentage of token Y to add.
+     */
+    function rebalanceWithAmountsFromLB(
+        uint24 removedLower,
+        uint24 removedUpper,
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory amountsInY,
+        uint256 maxPercentageToAddX,
+        uint256 maxPercentageToAddY
+    ) external override onlyOperators {
+        _withdraw(removedLower, removedUpper, 1, 1);
 
-        parameters = _expand(parameters, addedLower, addedUpper);
+        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
 
-        uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
-        uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
+        (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
+            _getDistributionsAndAmounts(addedLower, addedUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY);
 
         _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
     }
@@ -381,6 +439,14 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      */
     function _tokenY() internal pure returns (IERC20Upgradeable tokenY) {
         tokenY = IERC20Upgradeable(_getArgAddress(60));
+    }
+
+    /**
+     * @dev Returns the bin step of the pair
+     * @return binStep The bin step of the pair
+     */
+    function _binStep() internal pure returns (uint24 binStep) {
+        binStep = _getArgUint8(61);
     }
 
     /**
@@ -580,6 +646,61 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         return (addedLower, addedUpper);
     }
 
+    /**
+     * @dev Returns the distributions and amounts following the `amountsInY`.
+     * @param addedLower The lower end of the range to add.
+     * @param addedUpper The upper end of the range to add.
+     * @param maxPercentageToAddX The maximum percentage of token X to add.
+     * @param maxPercentageToAddY The maximum percentage of token Y to add.
+     * @param amountsInY The amounts of token, valued in token Y, to add.
+     * @return amountX The amount of token X to add.
+     * @return amountY The amount of token Y to add.
+     * @return distributionX The distribution of token X to add.
+     * @return distributionY The distribution of token Y to add.
+     */
+    function _getDistributionsAndAmounts(
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint256 maxPercentageToAddX,
+        uint256 maxPercentageToAddY,
+        uint256[] memory amountsInY
+    )
+        internal
+        view
+        returns (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY)
+    {
+        uint256 activeId;
+        uint256 price;
+        uint256 compositionFactor;
+
+        {
+            (,, activeId) = _pair().getReservesAndId();
+            (uint256 activeX, uint256 activeY) = _pair().getBin(uint24(activeId));
+
+            price = activeId.getPriceFromId(_binStep());
+            compositionFactor = activeY / ((activeX * price >> 128) + activeY);
+        }
+
+        if (addedLower <= activeId && activeId <= addedUpper) {
+            (amountX, amountY, distributionX, distributionY) =
+                amountsInY.getDistributions(compositionFactor, price, activeId - addedLower);
+        } else {
+            distributionX = new uint256[](amountsInY.length);
+            distributionY = new uint256[](amountsInY.length);
+
+            if (activeId < addedLower) {
+                amountX = amountsInY.computeDistributionX(distributionX, price, 0, 0, false);
+            } else {
+                amountY = amountsInY.computeDistributionY(distributionY, 0, amountsInY.length, false);
+            }
+        }
+
+        uint256 maxAmountX = _tokenX().balanceOf(address(this)) * maxPercentageToAddX / _PRECISION;
+        uint256 maxAmountY = _tokenY().balanceOf(address(this)) * maxPercentageToAddY / _PRECISION;
+
+        amountX = amountX > maxAmountX ? maxAmountX : amountX;
+        amountY = amountY > maxAmountY ? maxAmountY : amountY;
+    }
 
     /**
      * @dev Deposits tokens into the pair.
