@@ -70,6 +70,16 @@ interface IStrategy {
         uint256 percentageToAddY
     ) external;
 
+    function depositWithAmountsToLB(
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory amountsInY,
+        uint256 maxPercentageToAddX,
+        uint256 maxPercentageToAddY
+    ) external;
+
     function withdrawFromLB(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove) external;
 
     function rebalanceWithDistributionsFromLB(
@@ -83,6 +93,18 @@ interface IStrategy {
         uint256[] memory distributionY,
         uint256 percentageToAddX,
         uint256 percentageToAddY
+    ) external;
+
+    function rebalanceWithAmountsFromLB(
+        uint24 removedLower,
+        uint24 removedUpper,
+        uint24 addedLower,
+        uint24 addedUpper,
+        uint24 desiredActiveId,
+        uint24 slippageActiveId,
+        uint256[] memory amountsInY,
+        uint256 maxPercentageToAddX,
+        uint256 maxPercentageToAddY
     ) external;
 
     function collectFees() external;
