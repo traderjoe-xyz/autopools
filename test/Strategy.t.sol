@@ -111,7 +111,7 @@ contract StrategyTest is TestHelper {
         assertEq(IERC20Upgradeable(usdc).balanceOf(address(strategy)), 0, "test_CollectFees::2");
     }
 
-    function test_DepositToLB() public {
+    function test_depositWithDistributionsToLB() public {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -133,7 +133,9 @@ contract StrategyTest is TestHelper {
         distY[2] = 0;
 
         vm.prank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
         uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
@@ -141,28 +143,56 @@ contract StrategyTest is TestHelper {
         uint256 balancesInY = ((price * x) >> 128) + y;
         uint256 amountInY = ((price * amountX) >> 128) + amountY;
 
-        assertApproxEqRel(balancesInY, amountInY, 1e14, "test_DepositToLB::1");
+        assertApproxEqRel(balancesInY, amountInY, 1e14, "test_depositWithDistributionsToLB::1");
 
         for (uint256 i = activeId - 1; i <= activeId + 1; i++) {
             uint256 balance = ILBToken(wavax_usdc_20bp).balanceOf(vault, uint24(i));
 
-            assertGt(balance, 0, "test_DepositToLB::2");
+            assertGt(balance, 0, "test_depositWithDistributionsToLB::2");
         }
     }
 
-    function test_revert_DepositToLB() external {
+    function test_revert_depositWithDistributionsToLB() external {
         vm.expectRevert(IStrategy.Strategy__OnlyOperators.selector);
-        IStrategy(strategy).depositToLB(0, 0, new uint256[](0), new uint256[](0), 0, 0);
+        IStrategy(strategy).depositWithDistributionsToLB(0, 0, 0, 0, new uint256[](0), new uint256[](0), 0, 0);
+
+        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
         vm.startPrank(address(owner));
-        vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositToLB(0, 0, new uint256[](0), new uint256[](0), 0, 0);
+        vm.expectRevert(IStrategy.Strategy__InvalidRange.selector);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            0, 1, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
+        );
+
+        vm.expectRevert(Range.Range__InvalidRange.selector);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 0, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
+        );
 
         vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositToLB(0, 0, new uint256[](1), new uint256[](2), 0, 0);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 1, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
+        );
 
         vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositToLB(0, 0, new uint256[](2), new uint256[](1), 0, 0);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 1, uint24(activeId), 0, new uint256[](1), new uint256[](2), 0, 0
+        );
+
+        vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 1, uint24(activeId), 0, new uint256[](2), new uint256[](1), 0, 0
+        );
+
+        vm.expectRevert(IStrategy.Strategy__ActiveIdSlippage.selector);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 1, uint24(activeId) - 1, 0, new uint256[](3), new uint256[](3), 0, 0
+        );
+
+        vm.expectRevert(IStrategy.Strategy__ActiveIdSlippage.selector);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            1, 1, uint24(activeId) + 1, 0, new uint256[](3), new uint256[](3), 0, 0
+        );
         vm.stopPrank();
     }
 
@@ -188,7 +218,9 @@ contract StrategyTest is TestHelper {
         distY[2] = 0;
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
@@ -281,7 +313,7 @@ contract StrategyTest is TestHelper {
         return result;
     }
 
-    function test_RebalanceFromLB() external {
+    function test_rebalanceWithDistributionsFromLB() external {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -303,19 +335,22 @@ contract StrategyTest is TestHelper {
         distY[2] = 0;
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         distX = new uint256[](5);
         (distX[0], distX[1], distX[2], distX[3], distX[4]) = (0, 0, 0.5e18, 0.25e18, 0.25e18);
         distY = new uint256[](5);
         (distY[0], distY[1], distY[2], distY[3], distY[4]) = (0.25e18, 0.25e18, 0.5e18, 0, 0);
 
-        IStrategy(strategy).rebalanceFromLB(
+        IStrategy(strategy).rebalanceWithDistributionsFromLB(
             uint24(activeId) - 1,
             uint24(activeId) + 1,
-            1e18,
             uint24(activeId) - 2,
             uint24(activeId) + 2,
+            uint24(activeId),
+            0,
             distX,
             distY,
             1e18,
@@ -329,15 +364,18 @@ contract StrategyTest is TestHelper {
             amounts[i] = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 2 + i);
         }
 
-        assertApproxEqRel(amounts[0], amounts[1], 1e16, "test_RebalanceFromLB::1");
-        assertApproxEqRel(amounts[3], amounts[4], 1e16, "test_RebalanceFromLB::2");
+        assertApproxEqRel(amounts[0], amounts[1], 1e16, "test_rebalanceWithDistributionsFromLB::1");
+        assertApproxEqRel(amounts[3], amounts[4], 1e16, "test_rebalanceWithDistributionsFromLB::2");
 
         assertApproxEqRel(
-            amounts[2], amounts[0] + amounts[1] + amounts[3] + amounts[4], 1e16, "test_RebalanceFromLB::3"
+            amounts[2],
+            amounts[0] + amounts[1] + amounts[3] + amounts[4],
+            1e16,
+            "test_rebalanceWithDistributionsFromLB::3"
         );
     }
 
-    function test_RebalanceFromLBFar() external {
+    function test_rebalanceWithDistributionsFromLBFar() external {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -359,17 +397,20 @@ contract StrategyTest is TestHelper {
         distY[2] = 0;
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositToLB(uint24(activeId) - 1, uint24(activeId) + 1, distX, distY, 1e18, 1e18);
+        IStrategy(strategy).depositWithDistributionsToLB(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        );
 
         (distX[0], distX[1], distX[2]) = (0, 0, 0);
         (distY[0], distY[1], distY[2]) = (0.5e18, 0.25e18, 0.25e18);
 
-        IStrategy(strategy).rebalanceFromLB(
+        IStrategy(strategy).rebalanceWithDistributionsFromLB(
             uint24(activeId) - 1,
             uint24(activeId) + 1,
-            1e18,
             uint24(activeId) - 100,
             uint24(activeId) - 98,
+            uint24(activeId),
+            0,
             distX,
             distY,
             1e18,
@@ -379,7 +420,7 @@ contract StrategyTest is TestHelper {
 
         for (uint256 i = 0; i < 3; i++) {
             uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 100 + i);
-            assertApproxEqRel(amount, distY[i] * 1e18 / 1e18, 1e14, "test_RebalanceFromLBFar::1");
+            assertApproxEqRel(amount, distY[i] * 1e18 / 1e18, 1e14, "test_rebalanceWithDistributionsFromLBFar::1");
         }
     }
 }
