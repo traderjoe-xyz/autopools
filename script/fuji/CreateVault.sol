@@ -17,7 +17,7 @@ contract CreateVault is Script {
         // vm.createSelectFork(stdChains["avalanche"].rpcUrl, 26_179_802);
         vm.createSelectFork(vm.rpcUrl("fuji"));
 
-        ILBPair pair = ILBPair(0x8B1B20CcB675f5D221c701ec086dcaDeF1dBb517);
+        ILBPair pair = ILBPair(0x8fd0ce712BDdd0B37faC8133A4b23403ada08516);
 
         uint256 deployerPrivateKey = vm.envUint("DEPLOY_PRIVATE_KEY");
 
