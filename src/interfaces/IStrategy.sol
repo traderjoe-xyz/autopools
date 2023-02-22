@@ -24,14 +24,23 @@ interface IStrategy {
     error Strategy__InvalidFee();
     error Strategy__ActiveIdSlippageExceeded();
     error Strategy__ActiveIdSlippage();
+    error Strategy__RangeAlreadySet();
 
     event OperatorSet(address operator);
 
     event StrategistFeeSet(uint256 fee);
 
-    event FeesCollected(
-        address indexed sender, address indexed feeRecipient, uint256 vaultX, uint256 vaultY, uint256 feeX, uint256 feeY
+    event AumFeeCollected(
+        address indexed sender, uint256 totalBalanceX, uint256 totalBalanceY, uint256 feeX, uint256 feeY
     );
+
+    event AumAnnualFeeSet(uint256 fee);
+
+    event PendingAumAnnualFeeSet(uint256 fee);
+
+    event PendingAumAnnualFeeReset();
+
+    event RangeSet(uint24 low, uint24 upper);
 
     function getFactory() external view returns (IVaultFactory);
 
@@ -45,7 +54,9 @@ interface IStrategy {
 
     function getRange() external view returns (uint24 low, uint24 upper);
 
-    function getStrategistFee() external view returns (uint256 fee);
+    function getAumAnnualFee() external view returns (uint256 aumAnnualFee);
+
+    function getPendingAumAnnualFee() external view returns (bool isSet, uint256 pendingAumAnnualFee);
 
     function getOperator() external view returns (address);
 
@@ -59,47 +70,9 @@ interface IStrategy {
         external
         returns (uint256 amountX, uint256 amountY);
 
-    function depositWithDistributionsToLB(
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory distributionX,
-        uint256[] memory distributionY,
-        uint256 percentageToAddX,
-        uint256 percentageToAddY
-    ) external;
-
-    function depositWithAmountsToLB(
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory amountsInY,
-        uint256 maxPercentageToAddX,
-        uint256 maxPercentageToAddY
-    ) external;
-
-    function withdrawFromLB(uint24 removedLow, uint24 removedUpper, uint256 percentageToRemove) external;
-
-    function rebalanceWithDistributionsFromLB(
-        uint24 removedLow,
-        uint24 removedUpper,
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory distributionX,
-        uint256[] memory distributionY,
-        uint256 percentageToAddX,
-        uint256 percentageToAddY
-    ) external;
-
-    function rebalanceWithAmountsFromLB(
-        uint24 removedLower,
-        uint24 removedUpper,
-        uint24 addedLower,
-        uint24 addedUpper,
+    function rebalanceFromLB(
+        uint24 newLower,
+        uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
         uint256[] memory amountsInY,
@@ -113,5 +86,7 @@ interface IStrategy {
 
     function setOperator(address operator) external;
 
-    function setStrategistFee(uint256 fee) external;
+    function setPendingAumAnnualFee(uint16 pendingAumAnnualFee) external;
+
+    function resetPendingAumAnnualFee() external;
 }

@@ -21,6 +21,7 @@ interface IBaseVault is IERC20Upgradeable {
     error BaseVault__InvalidNativeAmount();
     error BaseVault__NativeTransferFailed();
     error BaseVault__OnlyWNative();
+    error BaseVault__DepositsPaused();
 
     event Deposited(address indexed user, uint256 amountX, uint256 amountY, uint256 shares);
 
@@ -32,6 +33,10 @@ interface IBaseVault is IERC20Upgradeable {
 
     event WithdrawalFeeSet(uint256 fee);
 
+    event DepositsPaused();
+
+    event DepositsResumed();
+
     function getFactory() external view returns (IVaultFactory);
 
     function getPair() external view returns (ILBPair);
@@ -42,7 +47,7 @@ interface IBaseVault is IERC20Upgradeable {
 
     function getStrategy() external view returns (IStrategy);
 
-    function getStrategistFee() external view returns (uint256);
+    function getAumAnnualFee() external view returns (uint256);
 
     function getRange() external view returns (uint24 low, uint24 upper);
 
@@ -58,6 +63,8 @@ interface IBaseVault is IERC20Upgradeable {
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY);
 
     function previewAmounts(uint256 shares) external view returns (uint256 amountX, uint256 amountY);
+
+    function isDepositsPaused() external view returns (bool);
 
     function deposit(uint256 amountX, uint256 amountY)
         external
@@ -76,7 +83,11 @@ interface IBaseVault is IERC20Upgradeable {
 
     function setStrategy(IStrategy newStrategy) external;
 
-    function pauseVault() external;
+    function pauseDeposits() external;
+
+    function resumeDeposits() external;
+
+    function emergencyWithdraw() external;
 
     function recoverERC20(IERC20Upgradeable token, address recipient, uint256 amount) external;
 }

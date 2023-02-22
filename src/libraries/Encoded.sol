@@ -53,6 +53,18 @@ library Encoded {
     }
 
     /**
+     * @notice Internal function to set a bool in an encoded bytes32 using an offset
+     * @dev This function can overflow
+     * @param encoded The previous encoded value
+     * @param value The value to encode
+     * @param offset The offset
+     * @return newEncoded The new encoded value
+     */
+    function setBool(bytes32 encoded, bool value, uint256 offset) internal pure returns (bytes32 newEncoded) {
+        return set(encoded, value ? 1 : 0, MASK_UINT1, offset);
+    }
+
+    /**
      * @notice Internal function to decode a bytes32 sample using a mask and offset
      * @dev This function can overflow
      * @param encoded The encoded value
@@ -67,15 +79,15 @@ library Encoded {
     }
 
     /**
-     * @notice Internal function to decode a bytes32 sample into a uint1 using an offset
+     * @notice Internal function to decode a bytes32 sample into a bool using an offset
      * @dev This function can overflow
      * @param encoded The encoded value
      * @param offset The offset
-     * @return value The decoded value as a uint8, since uint1 is not supported
+     * @return boolean The decoded value as a bool
      */
-    function decodeUint1(bytes32 encoded, uint256 offset) internal pure returns (uint8 value) {
+    function decodeBool(bytes32 encoded, uint256 offset) internal pure returns (bool boolean) {
         assembly {
-            value := and(shr(offset, encoded), MASK_UINT1)
+            boolean := and(shr(offset, encoded), MASK_UINT1)
         }
     }
 

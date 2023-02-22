@@ -27,7 +27,7 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * - OracleVault: This vault is used to interact with pairs where both tokens have an oracle. Deposits doesn't need to
  *                be made in the same ratio as the vault's current balance.
  * Only one strategy is available:
- * - Strategy: This strategy allows the operator to deposit and withdraw funds from the vault with no real limitation.
+ * - Strategy: This strategy allows the operator to rebalance and withdraw with no real limitation.
  */
 contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     using StringsUpgradeable for uint256;
@@ -57,7 +57,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @dev Initialize the contract.
      * @param owner The address of the owner of the contract.
      */
-    function initialize(address owner) external initializer {
+    function initialize(address owner) public initializer {
         __Ownable2Step_init();
 
         if (owner != msg.sender) _transferOwnership(owner);
@@ -190,12 +190,20 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice Sets the strategist fee of the given strategy.
+     * @notice Sets the pending AUM annual fee of the given strategy.
      * @param strategy The address of the strategy.
-     * @param strategistFee The strategist fee.
+     * @param pendingAumAnnualFee The pending AUM annual fee.
      */
-    function setStrategistFee(IStrategy strategy, uint256 strategistFee) external override onlyOwner {
-        strategy.setStrategistFee(strategistFee);
+    function setPendingAumAnnualFee(IStrategy strategy, uint16 pendingAumAnnualFee) external override onlyOwner {
+        strategy.setPendingAumAnnualFee(pendingAumAnnualFee);
+    }
+
+    /**
+     * @notice Resets the pending AUM annual fee of the given strategy.
+     * @param strategy The address of the strategy.
+     */
+    function resetPendingAumAnnualFee(IStrategy strategy) external override onlyOwner {
+        strategy.resetPendingAumAnnualFee();
     }
 
     /**
@@ -288,7 +296,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param vault The address of the vault.
      * @return strategy The address of the new strategy.
      */
-    function createDefaultStrategy(address vault) external onlyOwner returns (address strategy) {
+    function createDefaultStrategy(address vault) external override onlyOwner returns (address strategy) {
         ILBPair lbPair = IBaseVault(vault).getPair();
         address tokenX = address(lbPair.tokenX());
         address tokenY = address(lbPair.tokenY());
@@ -301,18 +309,34 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param vault The address of the vault.
      * @param strategy The address of the strategy.
      */
-    function linkVaultToStrategy(address vault, address strategy) external onlyOwner {
+    function linkVaultToStrategy(address vault, address strategy) external override onlyOwner {
         if (strategy == address(0)) revert VaultFactory__ZeroAddress();
 
         _linkVaultToStrategy(vault, strategy);
     }
 
     /**
-     * @notice Pauses the given vault.
+     * @notice Pauses the deposits of the given vault.
      * @param vault The address of the vault.
      */
-    function pauseVault(address vault) external onlyOwner {
-        IBaseVault(vault).pauseVault();
+    function pauseDeposits(address vault) external override onlyOwner {
+        IBaseVault(vault).pauseDeposits();
+    }
+
+    /**
+     * @notice Resumes the deposits of the given vault.
+     * @param vault The address of the vault.
+     */
+    function resumeDeposits(address vault) external override onlyOwner {
+        IBaseVault(vault).resumeDeposits();
+    }
+
+    /**
+     * @notice Emergency withdraw from the given vault.
+     * @param vault The address of the vault.
+     */
+    function emergencyWithdraw(address vault) external override onlyOwner {
+        IBaseVault(vault).emergencyWithdraw();
     }
 
     /**
@@ -322,11 +346,12 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param recipient The address of the recipient.
      * @param amount The amount of tokens to recover.
      */
-    function recoverERC20(IBaseVault vault, IERC20Upgradeable token, address recipient, uint256 amount)
+    function recoverERC20(address vault, IERC20Upgradeable token, address recipient, uint256 amount)
         external
+        override
         onlyOwner
     {
-        vault.recoverERC20(token, recipient, amount);
+        IBaseVault(vault).recoverERC20(token, recipient, amount);
     }
 
     /**
@@ -422,7 +447,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         returns (address strategy)
     {
         uint256 binStep = lbPair.feeParameters().binStep;
-        bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY, uint8(binStep));
+        bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY, uint16(binStep));
 
         return _createStrategy(StrategyType.Default, vault, lbPair, strategyImmutableData);
     }

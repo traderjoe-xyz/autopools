@@ -72,7 +72,9 @@ interface IVaultFactory {
 
     function setOperator(IStrategy strategy, address operator) external;
 
-    function setStrategistFee(IStrategy strategy, uint256 strategistFee) external;
+    function setPendingAumAnnualFee(IStrategy strategy, uint16 pendingAumAnnualFee) external;
+
+    function resetPendingAumAnnualFee(IStrategy strategy) external;
 
     function setFeeRecipient(address feeRecipient) external;
 
@@ -89,4 +91,14 @@ interface IVaultFactory {
     function createSimpleVault(ILBPair lbPair) external returns (address vault);
 
     function createDefaultStrategy(address vault) external returns (address strategy);
+
+    function linkVaultToStrategy(address vault, address strategy) external;
+
+    function pauseDeposits(address vault) external;
+
+    function resumeDeposits(address vault) external;
+
+    function emergencyWithdraw(address vault) external;
+
+    function recoverERC20(address vault, IERC20Upgradeable token, address recipient, uint256 amount) external;
 }
