@@ -141,14 +141,14 @@ contract OracleVault is BaseVault, IOracleVault {
         uint256 price = _getPrice();
         uint256 totalShares = totalSupply();
 
-        uint256 valueInY = _getScaledValueInY(price, amountX, amountY);
+        uint256 valueInY = _getValueInY(price, amountX, amountY);
 
         if (totalShares == 0) {
             return (valueInY, amountX, amountY);
         }
 
         (uint256 totalX, uint256 totalY) = _getBalances(strategy);
-        uint256 totalValueInY = _getScaledValueInY(price, totalX, totalY);
+        uint256 totalValueInY = _getValueInY(price, totalX, totalY);
 
         shares = valueInY.mulDivRoundDown(totalShares, totalValueInY);
 
@@ -156,26 +156,14 @@ contract OracleVault is BaseVault, IOracleVault {
     }
 
     /**
-     * @dev Returns the scaled value of amounts in token Y.
+     * @dev Returns the value of amounts in token Y.
      * @param price The price of token X in token Y.
      * @param amountX The amount of token X.
      * @param amountY The amount of token Y.
-     * @return valueInY The scaled value of amounts in token Y.
+     * @return valueInY The value of amounts in token Y.
      */
-    function _getScaledValueInY(uint256 price, uint256 amountX, uint256 amountY)
-        internal
-        pure
-        returns (uint256 valueInY)
-    {
-        unchecked {
-            uint256 scaledY = amountY << _SCALE_OFFSET;
-            uint256 scaledXinY = price * amountX;
-
-            valueInY = scaledXinY + scaledY;
-
-            if (amountY > type(uint128).max || scaledXinY / price != amountX || valueInY < scaledY) {
-                revert OracleVault__AmountsOverflow();
-            }
-        }
+    function _getValueInY(uint256 price, uint256 amountX, uint256 amountY) internal pure returns (uint256 valueInY) {
+        uint256 amountXInY = price.mulDivRoundDown(amountX, _SCALE_OFFSET);
+        return amountXInY + amountY;
     }
 }

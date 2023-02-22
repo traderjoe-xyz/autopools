@@ -38,12 +38,21 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     address private immutable _wnative;
 
     IStrategy private _strategy;
+    bool private _depositsPaused;
 
     /**
      * @dev Modifier to check if the caller is the factory.
      */
     modifier onlyFactory() {
         if (msg.sender != address(_factory)) revert BaseVault__OnlyFactory();
+        _;
+    }
+
+    /**
+     * @dev Modifier to check if the deposits are not paused.
+     */
+    modifier whenDepositsNotPaused() {
+        if (_depositsPaused) revert BaseVault__DepositsPaused();
         _;
     }
 
@@ -125,13 +134,13 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @dev Returns the strategist fee.
-     * @return strategistFee The strategist fee.
+     * @dev Returns the AUM annual fee of the strategy.
+     * @return
      */
-    function getStrategistFee() public view virtual override returns (uint256 strategistFee) {
+    function getAumAnnualFee() public view virtual override returns (uint256) {
         IStrategy strategy = _strategy;
 
-        return address(strategy) == address(0) ? 0 : strategy.getStrategistFee();
+        return address(strategy) == address(0) ? 0 : strategy.getAumAnnualFee();
     }
 
     /**
@@ -206,6 +215,14 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
+     * @notice Returns if the deposits are paused.
+     * @return paused True if the deposits are paused.
+     */
+    function isDepositsPaused() public view virtual override returns (bool paused) {
+        return _depositsPaused;
+    }
+
+    /**
      * @dev Deposits tokens to the strategy.
      * @param amountX The amount of token X to be deposited.
      * @param amountY The amount of token Y to be deposited.
@@ -217,6 +234,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         public
         virtual
         override
+        whenDepositsNotPaused
         nonReentrant
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY)
     {
@@ -360,30 +378,39 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         } else {
             // Withdraw all tokens from the current strategy and send them to the new strategy
             IStrategy(currentStrategy).withdraw(1, 1, address(newStrategy));
-
-            // Unapprove the current strategy
-            _approveStrategy(currentStrategy, 0);
         }
 
         // Set the new strategy
         _setStrategy(newStrategy);
-
-        // Approve the new strategy
-        _approveStrategy(newStrategy, type(uint256).max);
     }
 
     /**
-     * @dev Pauses the vault.
+     * @dev Pauses deposits.
+     */
+    function pauseDeposits() public virtual override onlyFactory nonReentrant {
+        _depositsPaused = true;
+
+        emit DepositsPaused();
+    }
+
+    /**
+     * @dev Resumes deposits.
+     */
+    function resumeDeposits() public virtual override onlyFactory nonReentrant {
+        _depositsPaused = false;
+
+        emit DepositsResumed();
+    }
+
+    /**
+     * @dev Emergency withdraws all tokens from the strategy and removes the strategy.
      * Will send all tokens to the vault.
      */
-    function pauseVault() public virtual override nonReentrant onlyFactory {
+    function emergencyWithdraw() public virtual override nonReentrant onlyFactory {
         IStrategy strategy = _strategy;
 
         // Withdraw all tokens from the strategy and send them to the vault
         strategy.withdraw(1, 1, address(this));
-
-        // Unapprove the strategy
-        _approveStrategy(strategy, 0);
 
         // Remove the current strategy
         _setStrategy(IStrategy(address(0)));
@@ -402,7 +429,9 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         nonReentrant
         onlyFactory
     {
-        if (token == _tokenX() || token == _tokenY()) revert BaseVault__InvalidToken();
+        if (address(_strategy) == address(0) && (token == _tokenX() || token == _tokenY())) {
+            revert BaseVault__InvalidToken();
+        }
 
         // If the token is the vault's token, the remaining amount must be greater than the minimum shares.
         if (token == this && IERC20Upgradeable(token).balanceOf(address(this)) <= amount + 1e6) {
@@ -499,17 +528,6 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         _strategy = strategy;
 
         emit StrategySet(strategy);
-    }
-
-    /**
-     * @dev Approves the `strategy` to spend `amount` for each tokenX, tokenY and LB token.
-     * @param strategy The address of the strategy.
-     * @param amount The amount to be approved.
-     */
-    function _approveStrategy(IStrategy strategy, uint256 amount) internal virtual {
-        _tokenX().approve(address(strategy), amount);
-        _tokenY().approve(address(strategy), amount);
-        ILBToken(address(_pair())).setApprovalForAll(address(strategy), amount > 0);
     }
 
     /**

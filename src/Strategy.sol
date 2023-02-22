@@ -2,8 +2,8 @@
 
 pragma solidity 0.8.10;
 
+import {SafeCast} from "joe-v2/libraries/SafeCast.sol";
 import {BinHelper} from "joe-v2/libraries/BinHelper.sol";
-import {Clone} from "clones-with-immutable-args/Clone.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
@@ -15,13 +15,14 @@ import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/S
 
 import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
+import {CloneExtension} from "./libraries/CloneExtension.sol";
 import {Encoded} from "./libraries/Encoded.sol";
 import {Math} from "./libraries/Math.sol";
 import {Range} from "./libraries/Range.sol";
 import {Distribution} from "./libraries/Distribution.sol";
 
 /**
- * @title Liquidity Book Strategy contract
+ * @title Liquidity Book Simple SimpleStrategy contract
  * @author Trader Joe
  * @notice This contract is used to interact with the Liquidity Book Pair contract.
  * It is used to manage the liquidity of the vault.
@@ -30,9 +31,9 @@ import {Distribution} from "./libraries/Distribution.sol";
  * - 0x14: 20 bytes: The address of the LB pair.
  * - 0x28: 20 bytes: The address of the token X.
  * - 0x3C: 20 bytes: The address of the token Y.
- * - 0x50: 1 bytes: The bin step of the lb pair.
+ * - 0x50: 2 bytes: The bin step of the lb pair.
  */
-contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
+contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using LiquidityAmounts for address;
     using Encoded for bytes32;
@@ -40,20 +41,26 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using Range for uint24;
     using Distribution for uint256[];
     using BinHelper for uint256;
+    using SafeCast for uint256;
 
     address private constant _ONE_INCH_ROUTER = 0x1111111254EEB25477B68fb85Ed929f73A960582;
 
     uint256 private constant _PRECISION = 1e18;
     uint256 private constant _BASIS_POINTS = 1e4;
-
-    uint256 private constant _OFFSET_LOWER_RANGE = 0;
-    uint256 private constant _OFFSET_UPPER_RANGE = 24;
-    uint256 private constant _OFFSET_STRATEGIST_FEE = 48;
-    uint256 private constant _OFFSET_OPERATOR = 64;
-
-    bytes32 private _parameters;
+    uint256 private constant _MAX_AUM_ANNUAL_FEE = 0.25e4; // 25%
+    uint256 private constant _SCALED_YEAR = 365 days * _BASIS_POINTS;
+    uint256 private constant _SCALED_YEAR_SUB_ONE = _SCALED_YEAR - 1;
 
     IVaultFactory private immutable _factory;
+
+    uint24 private _lowerRange;
+    uint24 private _upperRange;
+    uint16 private _aumAnnualFee;
+    uint64 private _lastRebalance;
+    uint16 private _pendingAumAnnualFee;
+    bool private _pendingAumAnnualFeeSet;
+
+    address private _operator;
 
     /**
      * @notice Modifier to check if the caller is the factory.
@@ -75,8 +82,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @notice Modifier to check if the caller is the operator or the default operator.
      */
     modifier onlyOperators() {
-        address operator = _decodeOperator(_parameters);
-        if (msg.sender != operator && msg.sender != _factory.getDefaultOperator()) revert Strategy__OnlyOperators();
+        if (msg.sender != _operator && msg.sender != _factory.getDefaultOperator()) revert Strategy__OnlyOperators();
         _;
     }
 
@@ -85,9 +91,9 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @param factory The address of the factory.
      */
     constructor(IVaultFactory factory) {
-        _factory = factory;
-
         _disableInitializers();
+
+        _factory = factory;
     }
 
     /**
@@ -146,7 +152,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return upper The upper bound of the range.
      */
     function getRange() external view override returns (uint24 lower, uint24 upper) {
-        (lower, upper) = _decodeRange(_parameters);
+        return (_lowerRange, _upperRange);
     }
 
     /**
@@ -154,7 +160,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return operator The operator of the strategy.
      */
     function getOperator() external view override returns (address operator) {
-        operator = _decodeOperator(_parameters);
+        return _operator;
     }
 
     /**
@@ -172,31 +178,40 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return amountY The amount of token Y.
      */
     function getPendingFees() external view override returns (uint256 amountX, uint256 amountY) {
-        (uint24 lower, uint24 upper) = _decodeRange(_parameters);
+        (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
+
         return upper == 0 ? (0, 0) : _getPendingFees(_getIds(lower, upper));
     }
 
     /**
-     * @notice Returns the strategist fee of the strategy.
-     * This is the fee that is taken on the fees collected by the strategy from LB.
-     * @return strategistFee The strategist fee of the strategy.
+     * @notice Returns the assets under management annual fee.
+     * @return aumAnnualFee The assets under management annual fee.
      */
-    function getStrategistFee() external view override returns (uint256) {
-        return _decodeStrategistFee(_parameters);
+    function getAumAnnualFee() external view override returns (uint256 aumAnnualFee) {
+        return _aumAnnualFee;
+    }
+
+    /**
+     * @notice Returns the pending assets under management annual fee.
+     * @return isSet True if the pending assets under management annual fee is set.
+     * @return pendingAumAnnualFee The pending assets under management annual fee.
+     * If the pending assets under management annual fee is not set, this value is zero.
+     */
+    function getPendingAumAnnualFee() external view override returns (bool isSet, uint256 pendingAumAnnualFee) {
+        return (_pendingAumAnnualFeeSet, _pendingAumAnnualFee);
     }
 
     /**
      * @notice Collect the fees from the LB pool.
      */
     function collectFees() external override {
-        bytes32 parameters = _parameters;
+        (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
 
-        (uint24 lower, uint24 upper) = _decodeRange(parameters);
-        if (upper > 0) _collectFees(_getIds(lower, upper), _decodeStrategistFee(parameters));
+        if (upper > 0) _collectFees(_getIds(lower, upper));
     }
 
     /**
-     * @notice Withdraw tokens from the strategy and the LB pool.
+     * @notice Withdraws tokens from the strategy and the LB pool.
      * @dev Only the vault can call this function.
      * @param shares The amount of shares to withdraw.
      * @param totalShares The total amount of shares.
@@ -208,161 +223,47 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         onlyVault
         returns (uint256 amountX, uint256 amountY)
     {
-        (uint24 lower, uint24 upper) = _decodeRange(_parameters);
-        (amountX, amountY) = _withdraw(lower, upper, shares, totalShares);
+        (amountX, amountY) = _withdraw(_lowerRange, _upperRange, shares, totalShares);
 
         _tokenX().safeTransfer(to, amountX);
         _tokenY().safeTransfer(to, amountY);
     }
 
     /**
-     * @notice Deposit tokens to the LB pool following the distributions.
-     * @dev Only the operator can call this function.
-     * @param addedLower The lower bound of the range to add.
-     * @param addedUpper The upper bound of the range to add.
-     * @param desiredActiveId The desired active id.
-     * @param slippageActiveId The slippage active id.
-     * @param distributionX The distribution of token X.
-     * @param distributionY The distribution of token Y.
-     * @param percentageToAddX The percentage of token X to add.
-     * @param percentageToAddY The percentage of token Y to add.
-     */
-    function depositWithDistributionsToLB(
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory distributionX,
-        uint256[] memory distributionY,
-        uint256 percentageToAddX,
-        uint256 percentageToAddY
-    ) external override onlyOperators {
-        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
-
-        uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
-        uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
-
-        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
-    }
-
-    /**
-     * @notice Deposit tokens to the LB pool following the amounts valued in Y.
-     * @dev Only the operator can call this function.
-     * @param addedLower The lower bound of the range to add.
-     * @param addedUpper The upper bound of the range to add.
-     * @param desiredActiveId The desired active id.
-     * @param slippageActiveId The slippage active id.
-     * @param amountsInY The amounts of tokens, valued in Y.
-     * @param maxPercentageToAddX The maximum percentage of token X to add.
-     * @param maxPercentageToAddY The maximum percentage of token Y to add.
-     */
-    function depositWithAmountsToLB(
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory amountsInY,
-        uint256 maxPercentageToAddX,
-        uint256 maxPercentageToAddY
-    ) external onlyOperators {
-        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
-
-        (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
-            _getDistributionsAndAmounts(addedLower, addedUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY);
-
-        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
-    }
-
-    /**
-     * @notice Withdraw tokens from the LB pool.
-     * @dev Only the operator can call this function.
-     * @param removedLower The lower bound of the range to remove.
-     * @param removedUpper The upper bound of the range to remove.
-     * @param percentageToRemove The percentage of tokens to remove.
-     */
-    function withdrawFromLB(uint24 removedLower, uint24 removedUpper, uint256 percentageToRemove)
-        external
-        override
-        onlyOperators
-        nonReentrant
-    {
-        _withdraw(removedLower, removedUpper, percentageToRemove, _PRECISION);
-    }
-
-    /**
-     * @notice Rebalance the strategy by depositing and withdrawing tokens from the LB pool.
-     * It will deposit the tokens following the distributions.
-     * @dev Only the operator can call this function.
-     * @param removedLower The lower bound of the range to remove.
-     * @param removedUpper The upper bound of the range to remove.
-     * @param addedLower The lower bound of the range to add.
-     * @param addedUpper The upper bound of the range to add.
-     * @param desiredActiveId The desired active id.
-     * @param slippageActiveId The slippage active id.
-     * @param distributionX The distribution of token X.
-     * @param distributionY The distribution of token Y.
-     * @param percentageToAddX The percentage of token X to add.
-     * @param percentageToAddY The percentage of token Y to add.
-     */
-    function rebalanceWithDistributionsFromLB(
-        uint24 removedLower,
-        uint24 removedUpper,
-        uint24 addedLower,
-        uint24 addedUpper,
-        uint24 desiredActiveId,
-        uint24 slippageActiveId,
-        uint256[] memory distributionX,
-        uint256[] memory distributionY,
-        uint256 percentageToAddX,
-        uint256 percentageToAddY
-    ) external override onlyOperators {
-        _withdraw(removedLower, removedUpper, 1, 1);
-
-        uint256 amountX = percentageToAddX * _tokenX().balanceOf(address(this)) / _PRECISION;
-        uint256 amountY = percentageToAddY * _tokenY().balanceOf(address(this)) / _PRECISION;
-
-        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
-
-        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
-    }
-
-    /**
-     * @notice Rebalance the strategy by depositing and withdrawing tokens from the LB pool.
+     * @notice Rebalances the strategy by depositing and withdrawing tokens from the LB pool.
      * It will deposit the tokens following the amounts valued in Y.
      * @dev Only the operator can call this function.
-     * @param removedLower The lower bound of the range to remove.
-     * @param removedUpper The upper bound of the range to remove.
-     * @param addedLower The lower bound of the range to add.
-     * @param addedUpper The upper bound of the range to add.
+     * @param newLower The lower bound of the new range.
+     * @param newUpper The upper bound of the new range.
      * @param desiredActiveId The desired active id.
      * @param slippageActiveId The slippage active id.
      * @param amountsInY The amounts of tokens, valued in Y.
      * @param maxPercentageToAddX The maximum percentage of token X to add.
      * @param maxPercentageToAddY The maximum percentage of token Y to add.
      */
-    function rebalanceWithAmountsFromLB(
-        uint24 removedLower,
-        uint24 removedUpper,
-        uint24 addedLower,
-        uint24 addedUpper,
+    function rebalanceFromLB(
+        uint24 newLower,
+        uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
         uint256[] memory amountsInY,
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY
     ) external override onlyOperators {
-        _withdraw(removedLower, removedUpper, 1, 1);
+        _withdrawAndApplyAumAnnualFee();
 
-        (addedLower, addedUpper) = _adjustRange(addedLower, addedUpper, desiredActiveId, slippageActiveId);
+        if (newUpper != 0) {
+            (newLower, newUpper) = _adjustRange(newLower, newUpper, desiredActiveId, slippageActiveId);
 
-        (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
-            _getDistributionsAndAmounts(addedLower, addedUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY);
+            (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
+                _getDistributionsAndAmounts(newLower, newUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY);
 
-        _depositToLB(addedLower, addedUpper, distributionX, distributionY, amountX, amountY);
+            _depositToLB(newLower, newUpper, distributionX, distributionY, amountX, amountY);
+        }
     }
 
     /**
-     * @notice Swap tokens using 1inch.
+     * @notice Swaps tokens using 1inch.
      * @dev Only the operator can call this function.
      * @param data The data to call the 1inch router with.
      */
@@ -386,27 +287,36 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @notice Set the operator.
+     * @notice Sets the operator.
      * @dev Only the factory can call this function.
      * @param operator The address of the operator.
      */
     function setOperator(address operator) external override onlyFactory {
-        _parameters = _encodeOperator(_parameters, operator);
+        _operator = operator;
 
         emit OperatorSet(operator);
     }
 
     /**
-     * @notice Set the strategist fee.
+     * @notice Sets the pending assets under management annual fee.
      * @dev Only the factory can call this function.
-     * @param fee The strategist fee.
+     * @param pendingAumAnnualFee The assets under management annual fee.
      */
-    function setStrategistFee(uint256 fee) external override onlyFactory {
-        if (fee > _BASIS_POINTS) revert Strategy__InvalidFee();
+    function setPendingAumAnnualFee(uint16 pendingAumAnnualFee) external override onlyFactory {
+        _pendingAumAnnualFee = pendingAumAnnualFee;
+        _pendingAumAnnualFeeSet = true;
 
-        _parameters = _encodeStrategistFee(_parameters, uint16(fee));
+        emit PendingAumAnnualFeeSet(pendingAumAnnualFee);
+    }
 
-        emit StrategistFeeSet(fee);
+    /**
+     * @notice Resets the pending assets under management annual fee.
+     * @dev Only the factory can call this function.
+     */
+    function resetPendingAumAnnualFee() external override onlyFactory {
+        _pendingAumAnnualFeeSet = false;
+
+        emit PendingAumAnnualFeeReset();
     }
 
     /**
@@ -445,109 +355,8 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @dev Returns the bin step of the pair
      * @return binStep The bin step of the pair
      */
-    function _binStep() internal pure returns (uint24 binStep) {
-        binStep = _getArgUint8(61);
-    }
-
-    /**
-     * @dev Encodes the range.
-     * @param parameters The current encoded parameters
-     * @param lower The lower end of the range.
-     * @param upper The upper end of the range.
-     * @return newParameters The encoded parameters.
-     */
-    function _encodeRange(bytes32 parameters, uint24 lower, uint24 upper)
-        internal
-        pure
-        returns (bytes32 newParameters)
-    {
-        if (lower > upper) revert Strategy__InvalidRange();
-
-        newParameters = parameters.set(lower, Encoded.MASK_UINT24, _OFFSET_LOWER_RANGE);
-        newParameters = newParameters.set(upper, Encoded.MASK_UINT24, _OFFSET_UPPER_RANGE);
-    }
-
-    /**
-     * @dev Encodes the fees on collect.
-     * @param parameters The current encoded parameters
-     * @param strategistFee The fees on collect.
-     * @return newParameters The encoded parameters.
-     */
-    function _encodeStrategistFee(bytes32 parameters, uint16 strategistFee)
-        internal
-        pure
-        returns (bytes32 newParameters)
-    {
-        return parameters.set(strategistFee, Encoded.MASK_UINT16, _OFFSET_STRATEGIST_FEE);
-    }
-
-    /**
-     * @dev Encodes the operator.
-     * @param parameters The current encoded parameters
-     * @param operator The address of the operator.
-     * @return newParameters The encoded parameters.
-     */
-    function _encodeOperator(bytes32 parameters, address operator) internal pure returns (bytes32 newParameters) {
-        return parameters.setAddress(operator, _OFFSET_OPERATOR);
-    }
-
-    /**
-     * @dev Decodes the range.
-     * @param parameters The encoded parameters.
-     * @return lower The lower end of the range.
-     * @return upper The upper end of the range.
-     */
-    function _decodeRange(bytes32 parameters) internal pure returns (uint24 lower, uint24 upper) {
-        lower = parameters.decodeUint24(_OFFSET_LOWER_RANGE);
-        upper = parameters.decodeUint24(_OFFSET_UPPER_RANGE);
-    }
-
-    /**
-     * @dev Decodes the fees on collect.
-     * @param parameters The encoded parameters.
-     * @return strategistFee The fees on collect.
-     */
-    function _decodeStrategistFee(bytes32 parameters) internal pure returns (uint16) {
-        return parameters.decodeUint16(_OFFSET_STRATEGIST_FEE);
-    }
-
-    /**
-     * @dev Decodes the operator.
-     * @param parameters The encoded parameters.
-     * @return operator The address of the operator.
-     */
-    function _decodeOperator(bytes32 parameters) internal pure returns (address operator) {
-        return parameters.decodeAddress(_OFFSET_OPERATOR);
-    }
-
-    /**
-     * @dev Expands the range. The range will be expanded to include the added range.
-     * @param parameters The current encoded parameters.
-     * @param addedLower The lower end of the range to add.
-     * @param addedUpper The upper end of the range to add.
-     * @return The new encoded range.
-     */
-    function _expand(bytes32 parameters, uint24 addedLower, uint24 addedUpper) internal pure returns (bytes32) {
-        (uint24 previousLower, uint24 previousUpper) = _decodeRange(parameters);
-        (uint256 newLower, uint256 newUpper) = previousLower.expands(previousUpper, addedLower, addedUpper);
-
-        return _encodeRange(parameters, uint24(newLower), uint24(newUpper));
-    }
-
-    /**
-     * @dev Shrinks the range. The range will be shrunk to exclude the removed range.
-     * The removed range must be inside the existing range and adjacent to the existing range.
-     * If the removed range is the same as the existing range, the zero range will be returned.
-     * @param parameters The current encoded parameters.
-     * @param removedLower The lower end of the range to remove.
-     * @param removedUpper The upper end of the range to remove.
-     * @return The new encoded range.
-     */
-    function _shrink(bytes32 parameters, uint24 removedLower, uint24 removedUpper) internal pure returns (bytes32) {
-        (uint24 previousLower, uint24 previousUpper) = _decodeRange(parameters);
-        (uint256 newLower, uint256 newUpper) = previousLower.shrinks(previousUpper, removedLower, removedUpper);
-
-        return _encodeRange(parameters, uint24(newLower), uint24(newUpper));
+    function _binStep() internal pure returns (uint16 binStep) {
+        binStep = _getArgUint16(80);
     }
 
     /**
@@ -576,20 +385,15 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return amountY The balance of token Y.
      */
     function _getBalances() internal view returns (uint256 amountX, uint256 amountY) {
-        IERC20Upgradeable tokenX = _tokenX();
-        IERC20Upgradeable tokenY = _tokenY();
+        amountX = _tokenX().balanceOf(address(this));
+        amountY = _tokenY().balanceOf(address(this));
 
-        address vault = _vault();
-
-        amountX = tokenX.balanceOf(address(this)) + tokenX.balanceOf(vault);
-        amountY = tokenY.balanceOf(address(this)) + tokenY.balanceOf(vault);
-
-        (uint24 lower, uint24 upper) = _decodeRange(_parameters);
+        (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
 
         if (upper != 0) {
             uint256[] memory ids = _getIds(lower, upper);
 
-            (uint256 depositedX, uint256 depositedY) = address(vault).getAmountsOf(ids, address(_pair()));
+            (uint256 depositedX, uint256 depositedY) = _vault().getAmountsOf(ids, address(_pair()));
             (uint256 feesX, uint256 feesY) = _getPendingFees(ids);
 
             amountX += depositedX + feesX;
@@ -604,18 +408,18 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return feesY The pending fees of token Y.
      */
     function _getPendingFees(uint256[] memory ids) internal view returns (uint256 feesX, uint256 feesY) {
-        (feesX, feesY) = _pair().pendingFees(address(_vault()), ids);
+        (feesX, feesY) = _pair().pendingFees(address(this), ids);
     }
 
     /**
      * @dev Adjusts the range if the active id is different from the desired active id.
      * Will revert if the active id is not within the desired active id and the slippage.
-     * @param addedLower The lower end of the range to add.
-     * @param addedUpper The upper end of the range to add.
+     * @param newLower The lower end of the new range.
+     * @param newUpper The upper end of the new range.
      * @param desiredActiveId The desired active id.
      * @param slippageActiveId The allowed slippage of the active id.
      */
-    function _adjustRange(uint24 addedLower, uint24 addedUpper, uint24 desiredActiveId, uint24 slippageActiveId)
+    function _adjustRange(uint24 newLower, uint24 newUpper, uint24 desiredActiveId, uint24 slippageActiveId)
         internal
         view
         returns (uint24, uint24)
@@ -624,32 +428,33 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
         if (desiredActiveId != activeId) {
             uint24 delta;
+
             if (desiredActiveId > activeId) {
                 unchecked {
                     delta = desiredActiveId - uint24(activeId);
 
-                    addedLower = addedLower > delta ? addedLower - delta : 0;
-                    addedUpper = addedUpper > delta ? addedUpper - delta : 0;
+                    newLower = newLower > delta ? newLower - delta : 0;
+                    newUpper = newUpper > delta ? newUpper - delta : 0;
                 }
             } else {
                 unchecked {
                     delta = uint24(activeId) - desiredActiveId;
 
-                    addedLower = addedLower > type(uint24).max - delta ? type(uint24).max : addedLower + delta;
-                    addedUpper = addedUpper > type(uint24).max - delta ? type(uint24).max : addedUpper + delta;
+                    newLower = newLower > type(uint24).max - delta ? type(uint24).max : newLower + delta;
+                    newUpper = newUpper > type(uint24).max - delta ? type(uint24).max : newUpper + delta;
                 }
             }
 
             if (delta > slippageActiveId) revert Strategy__ActiveIdSlippage();
         }
 
-        return (addedLower, addedUpper);
+        return (newLower, newUpper);
     }
 
     /**
      * @dev Returns the distributions and amounts following the `amountsInY`.
-     * @param addedLower The lower end of the range to add.
-     * @param addedUpper The upper end of the range to add.
+     * @param newLower The lower end of the new range.
+     * @param newUpper The upper end of the new range.
      * @param maxPercentageToAddX The maximum percentage of token X to add.
      * @param maxPercentageToAddY The maximum percentage of token Y to add.
      * @param amountsInY The amounts of token, valued in token Y, to add.
@@ -659,8 +464,8 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @return distributionY The distribution of token Y to add.
      */
     function _getDistributionsAndAmounts(
-        uint24 addedLower,
-        uint24 addedUpper,
+        uint24 newLower,
+        uint24 newUpper,
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY,
         uint256[] memory amountsInY
@@ -678,17 +483,17 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             (uint256 activeX, uint256 activeY) = _pair().getBin(uint24(activeId));
 
             price = activeId.getPriceFromId(_binStep());
-            compositionFactor = activeY / ((activeX * price >> 128) + activeY);
+            compositionFactor = activeY == 0 || activeX == 0 ? 1 >> 127 : activeY / ((activeX * price >> 128) + activeY);
         }
 
-        if (addedLower <= activeId && activeId <= addedUpper) {
+        if (newLower <= activeId && activeId <= newUpper) {
             (amountX, amountY, distributionX, distributionY) =
-                amountsInY.getDistributions(compositionFactor, price, activeId - addedLower);
+                amountsInY.getDistributions(compositionFactor, price, activeId - newLower);
         } else {
             distributionX = new uint256[](amountsInY.length);
             distributionY = new uint256[](amountsInY.length);
 
-            if (activeId < addedLower) {
+            if (activeId < newLower) {
                 amountX = amountsInY.computeDistributionX(distributionX, price, 0, 0, false);
             } else {
                 amountY = amountsInY.computeDistributionY(distributionY, 0, amountsInY.length, false);
@@ -698,86 +503,128 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         uint256 maxAmountX = _tokenX().balanceOf(address(this)) * maxPercentageToAddX / _PRECISION;
         uint256 maxAmountY = _tokenY().balanceOf(address(this)) * maxPercentageToAddY / _PRECISION;
 
-        amountX = amountX > maxAmountX ? maxAmountX : amountX;
-        amountY = amountY > maxAmountY ? maxAmountY : amountY;
+        if (amountX == 0 || amountY == 0) {
+            amountX = amountX > maxAmountX ? maxAmountX : amountX;
+            amountY = amountY > maxAmountY ? maxAmountY : amountY;
+        } else if (amountX > maxAmountX || amountY > maxAmountY) {
+            (amountX, amountY) = maxAmountX * amountY > maxAmountY * amountX
+                ? (amountX * maxAmountY / amountY, maxAmountY)
+                : (maxAmountX, amountY * maxAmountX / amountX);
+        }
+    }
+
+    /**
+     * @dev Sets the range only if it is not already set. Will revert if the range is already set.
+     * @param newLower The lower end of the new range.
+     * @param newUpper The upper end of the new range.
+     */
+    function _setRange(uint24 newLower, uint24 newUpper) internal {
+        if (newUpper == 0 || newLower > newUpper) revert Strategy__InvalidRange();
+
+        uint24 previousUpper = _upperRange;
+
+        // If there is a current range, it reverts
+        if (previousUpper != 0) revert Strategy__RangeAlreadySet();
+
+        // If the range is not set, it will set the range to the new range.
+        _lowerRange = newLower;
+        _upperRange = newUpper;
+
+        emit RangeSet(newLower, newUpper);
+    }
+
+    /**
+     * @dev Resets the range.
+     */
+    function _resetRange() internal {
+        _lowerRange = 0;
+        _upperRange = 0;
+
+        emit RangeSet(0, 0);
     }
 
     /**
      * @dev Deposits tokens into the pair.
-     * @param addedLower The lower end of the range to add.
-     * @param addedUpper The upper end of the range to add.
+     * @param lower The lower end of the range.
+     * @param upper The upper end of the range.
      * @param distributionX The distribution of token X.
      * @param distributionY The distribution of token Y.
      * @param amountX The amount of token X to deposit.
      * @param amountY The amount of token Y to deposit.
      */
     function _depositToLB(
-        uint24 addedLower,
-        uint24 addedUpper,
+        uint24 lower,
+        uint24 upper,
         uint256[] memory distributionX,
         uint256[] memory distributionY,
         uint256 amountX,
         uint256 amountY
     ) internal {
-        if (addedLower == 0) revert Strategy__InvalidRange();
+        if (upper == 0) revert Strategy__InvalidRange();
 
-        _parameters = _expand(_parameters, addedLower, addedUpper);
-
-        uint256 delta = addedUpper - addedLower + 1;
+        uint256 delta = upper - lower + 1;
 
         if (distributionX.length != delta || distributionY.length != delta) revert Strategy__InvalidDistribution();
         if (amountX == 0 && amountY == 0) revert Strategy__ZeroAmounts();
+
+        _setRange(lower, upper);
 
         address pair = address(_pair());
 
         if (amountX > 0) _tokenX().safeTransfer(pair, amountX);
         if (amountY > 0) _tokenY().safeTransfer(pair, amountY);
 
-        ILBPair(pair).mint(_getIds(addedLower, addedUpper), distributionX, distributionY, _vault());
+        ILBPair(pair).mint(_getIds(lower, upper), distributionX, distributionY, address(this));
     }
 
     /**
      * @dev Collects the fees from the pair.
      * @param ids The ids of the tokens to collect the fees for.
-     * @param fee The share of the collected fees to send to the fee recipient.
      */
-    function _collectFees(uint256[] memory ids, uint256 fee) internal {
-        address vault = _vault();
-
+    function _collectFees(uint256[] memory ids) internal {
         (uint256 pendingX, uint256 pendingY) = _getPendingFees(ids);
-        if (pendingX > 0 || pendingY > 0) _pair().collectFees(vault, ids);
+        if (pendingX > 0 || pendingY > 0) _pair().collectFees(address(this), ids);
+    }
 
-        (IERC20Upgradeable tokenX, IERC20Upgradeable tokenY) = (_tokenX(), _tokenY());
-        (uint256 vaultX, uint256 vaultY) = (tokenX.balanceOf(vault), tokenY.balanceOf(vault));
+    function _withdrawAndApplyAumAnnualFee() internal {
+        (uint24 lowerRange, uint24 upperRange) = (_lowerRange, _upperRange);
 
-        uint256 feeX;
-        uint256 feeY;
+        if (upperRange > 0) {
+            _resetRange();
+            (uint256 totalBalanceX, uint256 totalBalanceY) = _withdraw(lowerRange, upperRange, 1, 1);
 
-        address feeRecipient = _factory.getFeeRecipient();
+            if (totalBalanceX > 0 || totalBalanceY > 0) {
+                uint256 lastRebalance = _lastRebalance;
+                _lastRebalance = block.timestamp.safe64();
 
-        if (vaultX > 0) {
-            feeX = vaultX * fee / _BASIS_POINTS;
+                uint256 annualFee = _aumAnnualFee;
 
-            if (feeX > 0) {
-                vaultX -= feeX;
-                tokenX.safeTransferFrom(vault, feeRecipient, feeX);
+                if (annualFee > 0 && block.timestamp > lastRebalance) {
+                    address feeRecipient = _factory.getFeeRecipient();
+
+                    uint256 duration = block.timestamp - lastRebalance;
+                    duration = duration > 1 days ? duration : 1 days;
+
+                    // Round up the fees
+                    uint256 feeX = (totalBalanceX * annualFee * duration + _SCALED_YEAR_SUB_ONE) / _SCALED_YEAR;
+                    uint256 feeY = (totalBalanceY * annualFee * duration + _SCALED_YEAR_SUB_ONE) / _SCALED_YEAR;
+
+                    if (feeX > 0) _tokenX().safeTransfer(feeRecipient, feeX);
+                    if (feeY > 0) _tokenY().safeTransfer(feeRecipient, feeY);
+
+                    emit AumFeeCollected(msg.sender, totalBalanceX, totalBalanceY, feeX, feeY);
+                }
+
+                if (_pendingAumAnnualFeeSet) {
+                    _pendingAumAnnualFeeSet = false;
+
+                    uint16 pendingAumAnnualFee = _pendingAumAnnualFee;
+                    _aumAnnualFee = pendingAumAnnualFee;
+
+                    emit AumAnnualFeeSet(pendingAumAnnualFee);
+                }
             }
-
-            tokenX.safeTransferFrom(vault, address(this), vaultX);
         }
-
-        if (vaultY > 0) {
-            feeY = vaultY * fee / _BASIS_POINTS;
-
-            if (feeY > 0) {
-                vaultY -= feeY;
-                tokenY.safeTransferFrom(vault, feeRecipient, feeY);
-            }
-
-            tokenY.safeTransferFrom(vault, address(this), vaultY);
-        }
-
-        emit FeesCollected(msg.sender, feeRecipient, vaultX, vaultY, feeX, feeY);
     }
 
     /**
@@ -799,57 +646,62 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
             return (shares * balanceX / totalShares, shares * balanceY / totalShares);
         } else {
-            bytes32 parameters = _parameters;
+            (uint256 balanceX, uint256 balanceY, uint256 withdrawnX, uint256 withdrawnY) =
+                _withdrawFromLB(removedLower, removedUpper, shares, totalShares);
 
-            if (shares == totalShares) _parameters = _shrink(parameters, removedLower, removedUpper);
+            amountX = withdrawnX + shares * balanceX / totalShares;
+            amountY = withdrawnY + shares * balanceY / totalShares;
+        }
+    }
 
-            uint256 delta = removedUpper - removedLower + 1;
+    function _withdrawFromLB(uint24 removedLower, uint24 removedUpper, uint256 shares, uint256 totalShares)
+        internal
+        returns (uint256 balanceX, uint256 balanceY, uint256 withdrawnX, uint256 withdrawnY)
+    {
+        uint256 delta = removedUpper - removedLower + 1;
 
-            uint256[] memory ids = new uint256[](delta);
-            uint256[] memory amounts = new uint256[](delta);
+        uint256[] memory ids = new uint256[](delta);
+        uint256[] memory amounts = new uint256[](delta);
 
-            address pair = address(_pair());
-            address vault = _vault();
+        address pair = address(_pair());
 
-            uint256 length = 0;
-            for (uint256 i; i < delta;) {
-                uint256 id = removedLower + i;
-                uint256 amount = shares * ILBToken(pair).balanceOf(vault, id) / totalShares;
+        uint256 length = 0;
+        for (uint256 i; i < delta;) {
+            uint256 id = removedLower + i;
+            uint256 amount = shares * ILBToken(pair).balanceOf(address(this), id) / totalShares;
 
-                if (amount != 0) {
-                    ids[length] = id;
-                    amounts[length] = amount;
-
-                    unchecked {
-                        ++length;
-                    }
-                }
+            if (amount != 0) {
+                ids[length] = id;
+                amounts[length] = amount;
 
                 unchecked {
-                    ++i;
+                    ++length;
                 }
             }
 
-            if (length != delta) {
-                assembly {
-                    mstore(ids, length)
-                    mstore(amounts, length)
-                }
+            unchecked {
+                ++i;
             }
-
-            ILBToken(pair).safeBatchTransferFrom(vault, pair, ids, amounts);
-            _collectFees(new uint256[](0), _decodeStrategistFee(parameters));
-
-            uint256 balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
-            uint256 balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
-
-            ILBPair(pair).burn(ids, amounts, address(this));
-
-            amountX = IERC20Upgradeable(_tokenX()).balanceOf(address(this)) - balanceX;
-            amountY = IERC20Upgradeable(_tokenY()).balanceOf(address(this)) - balanceY;
-
-            amountX += shares * balanceX / totalShares;
-            amountY += shares * balanceY / totalShares;
         }
+
+        if (length != delta) {
+            assembly {
+                mstore(ids, length)
+                mstore(amounts, length)
+            }
+        }
+
+        ILBToken(pair).safeBatchTransferFrom(address(this), pair, ids, amounts);
+        _collectFees(new uint256[](0));
+
+        balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
+        balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
+
+        if (length == 0) return (balanceX, balanceY, 0, 0);
+
+        ILBPair(pair).burn(ids, amounts, address(this));
+
+        withdrawnX = IERC20Upgradeable(_tokenX()).balanceOf(address(this)) - balanceX;
+        withdrawnY = IERC20Upgradeable(_tokenY()).balanceOf(address(this)) - balanceY;
     }
 }
