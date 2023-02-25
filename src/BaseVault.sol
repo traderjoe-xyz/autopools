@@ -648,11 +648,11 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         }
 
         // Get the balances of the vault, this will not contain the executed withdrawals.
-        (uint256 balanceX, uint256 balanceY) = _getBalances(currentStrategy);
+        (uint256 balanceX, uint256 balanceY) = _getBalances(IStrategy(address(0)));
 
         // Transfer all balances to the new strategy
-        if (balanceX > 0) _tokenX().safeTransfer(address(newStrategy), balanceX - _totalAmountX);
-        if (balanceY > 0) _tokenY().safeTransfer(address(newStrategy), balanceY - _totalAmountY);
+        if (balanceX > 0) _tokenX().safeTransfer(address(newStrategy), balanceX);
+        if (balanceY > 0) _tokenY().safeTransfer(address(newStrategy), balanceY);
 
         // Set the new strategy
         _setStrategy(newStrategy);
