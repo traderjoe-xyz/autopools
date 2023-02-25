@@ -27,8 +27,6 @@ contract SimpleVault is BaseVault, ISimpleVault {
     using Math512Bits for uint256;
     using Math for uint256;
 
-    uint256 private constant _SCALE_OFFSET = 128;
-
     /**
      * @dev Constructor of the contract.
      * @param factory Address of the factory.
@@ -59,7 +57,7 @@ contract SimpleVault is BaseVault, ISimpleVault {
         if (totalShares == 0) {
             effectiveX = amountX;
             effectiveY = amountY;
-            shares = (amountX.max(amountY)) << _SCALE_OFFSET;
+            shares = (amountX.max(amountY)) * _SHARES_PRECISION;
         } else {
             (uint256 totalX, uint256 totalY) = _getBalances(strategy);
             if (totalX > type(uint128).max || totalY > type(uint128).max) revert SimpleVault__AmountsOverflow();

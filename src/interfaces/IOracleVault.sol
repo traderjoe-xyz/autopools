@@ -9,9 +9,13 @@ import {IStrategy} from "./IStrategy.sol";
 import {IBaseVault} from "./IBaseVault.sol";
 import {IAggregatorV3} from "./IAggregatorV3.sol";
 
+/**
+ * @title Oracle Vault Interface
+ * @author Trader Joe
+ * @notice Interface used to interact with Liquidity Book Oracle Vaults
+ */
 interface IOracleVault is IBaseVault {
     error OracleVault__InvalidPrice();
-    error OracleVault__AmountsOverflow();
 
     function getOracleX() external pure returns (IAggregatorV3 oracleX);
 
