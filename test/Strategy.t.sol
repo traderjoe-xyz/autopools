@@ -70,8 +70,8 @@ contract StrategyTest is TestHelper {
 
         (x, y) = IStrategy(strategy).getBalances();
 
-        assertEq(x, 2e18, "test_GetBalances::5");
-        assertEq(y, 2e6, "test_GetBalances::6");
+        assertEq(x, 1e18, "test_GetBalances::5");
+        assertEq(y, 1e6, "test_GetBalances::6");
     }
 
     function test_GetPendingFees() external {
@@ -81,27 +81,41 @@ contract StrategyTest is TestHelper {
         assertEq(y, 0, "test_GetPendingFees::2");
     }
 
-    function test_GetStrategistFee() external {
-        assertEq(IStrategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::1");
+    function test_GetPendingAumFee() external {
+        assertEq(IStrategy(strategy).getAumAnnualFee(), 0, "test_GetPendingAumFee::1");
 
         vm.prank(owner);
-        factory.setStrategistFee(IStrategy(strategy), 1e4);
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 0.25e4);
 
-        assertEq(IStrategy(strategy).getStrategistFee(), 1e4, "test_GetStrategistFee::2");
+        (bool isPending, uint256 pendingFee) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertTrue(isPending, "test_GetPendingAumFee::2");
+        assertEq(pendingFee, 0.25e4, "test_GetPendingAumFee::3");
 
         vm.prank(owner);
-        factory.setStrategistFee(IStrategy(strategy), 0);
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 0);
 
-        assertEq(IStrategy(strategy).getStrategistFee(), 0, "test_GetStrategistFee::3");
+        (isPending, pendingFee) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertTrue(isPending, "test_GetPendingAumFee::4");
+        assertEq(pendingFee, 0, "test_GetPendingAumFee::5");
+
+        vm.prank(owner);
+        factory.resetPendingAumAnnualFee(IBaseVault(vault));
+
+        (isPending, pendingFee) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertFalse(isPending, "test_GetPendingAumFee::6");
+        assertEq(pendingFee, 0, "test_GetPendingAumFee::7");
     }
 
-    function test_revert_SetStrategistFee() external {
+    function test_revert_SetPendingAumAnnualFee() external {
         vm.expectRevert(IStrategy.Strategy__OnlyFactory.selector);
-        IStrategy(strategy).setStrategistFee(0.1e4);
+        IStrategy(strategy).setPendingAumAnnualFee(0.1e4);
 
         vm.expectRevert(IStrategy.Strategy__InvalidFee.selector);
         vm.prank(address(factory));
-        IStrategy(strategy).setStrategistFee(1e4 + 1);
+        IStrategy(strategy).setPendingAumAnnualFee(0.25e4 + 1);
     }
 
     function test_CollectFees() external {
@@ -111,7 +125,7 @@ contract StrategyTest is TestHelper {
         assertEq(IERC20Upgradeable(usdc).balanceOf(address(strategy)), 0, "test_CollectFees::2");
     }
 
-    function test_depositWithDistributionsToLB() public {
+    function test_RebalanceClose() public {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -120,21 +134,12 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory distX = new uint256[](3);
-
-        distX[0] = 0;
-        distX[1] = 0.5e18;
-        distX[2] = 0.5e18;
-
-        uint256[] memory distY = new uint256[](3);
-
-        distY[0] = 0.5e18;
-        distY[1] = 0.5e18;
-        distY[2] = 0;
+        uint256[] memory amountsInY = new uint256[](3);
+        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
 
         vm.prank(owner);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        IStrategy(strategy).rebalance(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
         );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
@@ -143,100 +148,64 @@ contract StrategyTest is TestHelper {
         uint256 balancesInY = ((price * x) >> 128) + y;
         uint256 amountInY = ((price * amountX) >> 128) + amountY;
 
-        assertApproxEqRel(balancesInY, amountInY, 1e14, "test_depositWithDistributionsToLB::1");
+        assertApproxEqRel(balancesInY, amountInY, 1e14, "test_Rebalance::1");
 
         for (uint256 i = activeId - 1; i <= activeId + 1; i++) {
-            uint256 balance = ILBToken(wavax_usdc_20bp).balanceOf(vault, uint24(i));
+            uint256 balance = ILBToken(wavax_usdc_20bp).balanceOf(strategy, uint24(i));
 
-            assertGt(balance, 0, "test_depositWithDistributionsToLB::2");
+            assertGt(balance, 0, "test_Rebalance::2");
         }
     }
 
-    function test_revert_depositWithDistributionsToLB() external {
+    function test_revert_Rebalance() external {
         vm.expectRevert(IStrategy.Strategy__OnlyOperators.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(0, 0, 0, 0, new uint256[](0), new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
         vm.startPrank(address(owner));
+        vm.expectRevert(IStrategy.Strategy__ZeroAmounts.selector);
+        IStrategy(strategy).rebalance(0, 1, uint24(activeId), 0, new uint256[](2), 0, 0);
+
         vm.expectRevert(IStrategy.Strategy__InvalidRange.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            0, 1, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
-        );
+        IStrategy(strategy).rebalance(1, 0, uint24(activeId), 0, new uint256[](0), 0, 0);
 
-        vm.expectRevert(Range.Range__InvalidRange.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 0, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
-        );
-
-        vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 1, uint24(activeId), 0, new uint256[](0), new uint256[](0), 0, 0
-        );
-
-        vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 1, uint24(activeId), 0, new uint256[](1), new uint256[](2), 0, 0
-        );
-
-        vm.expectRevert(IStrategy.Strategy__InvalidDistribution.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 1, uint24(activeId), 0, new uint256[](2), new uint256[](1), 0, 0
-        );
+        vm.expectRevert(IStrategy.Strategy__InvalidAmountsLength.selector);
+        IStrategy(strategy).rebalance(1, 1, uint24(activeId), 0, new uint256[](0), 0, 0);
 
         vm.expectRevert(IStrategy.Strategy__ActiveIdSlippage.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 1, uint24(activeId) - 1, 0, new uint256[](3), new uint256[](3), 0, 0
-        );
-
-        vm.expectRevert(IStrategy.Strategy__ActiveIdSlippage.selector);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            1, 1, uint24(activeId) + 1, 0, new uint256[](3), new uint256[](3), 0, 0
-        );
+        IStrategy(strategy).rebalance(1, 1, uint24(activeId) + 1, 0, new uint256[](3), 0, 0);
         vm.stopPrank();
     }
 
-    function test_WithdrawFromLb() external {
+    function test_WithdrawAll() external {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
-
-        uint256[] memory distX = new uint256[](3);
-
-        distX[0] = 0;
-        distX[1] = 0.5e18;
-        distX[2] = 0.5e18;
-
-        uint256[] memory distY = new uint256[](3);
-
-        distY[0] = 0.5e18;
-        distY[1] = 0.5e18;
-        distY[2] = 0;
+        uint256[] memory amountsInY = new uint256[](3);
+        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
-        );
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, amountsInY, 1e18, 1e18);
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
-        IStrategy(strategy).withdrawFromLB(uint24(activeId) - 1, uint24(activeId) + 1, 1e18);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
         vm.stopPrank();
 
         (uint256 x2, uint256 y2) = IStrategy(strategy).getBalances();
 
-        assertEq(x2, x, "test_WithdrawFromLb::1");
-        assertEq(y2, y, "test_WithdrawFromLb::2");
+        assertEq(x2, x, "test_WithdrawAll::1");
+        assertEq(y2, y, "test_WithdrawAll::2");
 
         uint256 bx = IERC20Upgradeable(wavax).balanceOf(address(strategy));
         uint256 by = IERC20Upgradeable(usdc).balanceOf(address(strategy));
 
-        assertEq(bx, x, "test_WithdrawFromLb::3");
-        assertEq(by, y, "test_WithdrawFromLb::4");
+        assertEq(bx, x, "test_WithdrawAll::3");
+        assertEq(by, y, "test_WithdrawAll::4");
     }
 
     function test_Swap() external {
@@ -313,7 +282,7 @@ contract StrategyTest is TestHelper {
         return result;
     }
 
-    function test_rebalanceWithDistributionsFromLB() external {
+    function test_RebalanceAmounts() external {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -322,60 +291,38 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory distX = new uint256[](3);
-
-        distX[0] = 0;
-        distX[1] = 0.5e18;
-        distX[2] = 0.5e18;
-
-        uint256[] memory distY = new uint256[](3);
-
-        distY[0] = 0.5e18;
-        distY[1] = 0.5e18;
-        distY[2] = 0;
+        uint256[] memory amountsInY = new uint256[](3);
+        (amountsInY[0], amountsInY[1], amountsInY[2]) = (30e6, 60e6, 30e6);
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        IStrategy(strategy).rebalance(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
         );
 
-        distX = new uint256[](5);
-        (distX[0], distX[1], distX[2], distX[3], distX[4]) = (0, 0, 0.5e18, 0.25e18, 0.25e18);
-        distY = new uint256[](5);
-        (distY[0], distY[1], distY[2], distY[3], distY[4]) = (0.25e18, 0.25e18, 0.5e18, 0, 0);
+        amountsInY = new uint256[](5);
 
-        IStrategy(strategy).rebalanceWithDistributionsFromLB(
-            uint24(activeId) - 1,
-            uint24(activeId) + 1,
-            uint24(activeId) - 2,
-            uint24(activeId) + 2,
-            uint24(activeId),
-            0,
-            distX,
-            distY,
-            1e18,
-            1e18
+        (amountsInY[0], amountsInY[1], amountsInY[2], amountsInY[3], amountsInY[4]) = (10e6, 20e6, 60e6, 20e6, 10e6);
+
+        IStrategy(strategy).rebalance(
+            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, amountsInY, 1e18, 1e18
         );
         vm.stopPrank();
 
         uint256[] memory amounts = new uint256[](5);
 
         for (uint256 i = 0; i < 5; i++) {
-            amounts[i] = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 2 + i);
+            amounts[i] = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 2 + i);
         }
 
-        assertApproxEqRel(amounts[0], amounts[1], 1e16, "test_rebalanceWithDistributionsFromLB::1");
-        assertApproxEqRel(amounts[3], amounts[4], 1e16, "test_rebalanceWithDistributionsFromLB::2");
+        assertApproxEqRel(amounts[0] * 2, amounts[1], 1e16, "test_RebalanceAmounts::1");
+        assertApproxEqRel(amounts[4] * 2, amounts[3], 1e16, "test_RebalanceAmounts::2");
 
         assertApproxEqRel(
-            amounts[2],
-            amounts[0] + amounts[1] + amounts[3] + amounts[4],
-            1e16,
-            "test_rebalanceWithDistributionsFromLB::3"
+            amounts[2], amounts[0] + amounts[1] + amounts[3] + amounts[4], 1e16, "test_RebalanceAmounts::3"
         );
     }
 
-    function test_rebalanceWithDistributionsFromLBFar() external {
+    function test_RebalanceFar() external {
         uint256 amountX = 1e18;
         uint256 amountY = 1e18;
 
@@ -384,43 +331,34 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory distX = new uint256[](3);
-
-        distX[0] = 0;
-        distX[1] = 0.5e18;
-        distX[2] = 0.5e18;
-
-        uint256[] memory distY = new uint256[](3);
-
-        distY[0] = 0.5e18;
-        distY[1] = 0.5e18;
-        distY[2] = 0;
+        uint256[] memory amountsInY = new uint256[](3);
+        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
 
         vm.startPrank(owner);
-        IStrategy(strategy).depositWithDistributionsToLB(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, distX, distY, 1e18, 1e18
+        IStrategy(strategy).rebalance(
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
         );
 
-        (distX[0], distX[1], distX[2]) = (0, 0, 0);
-        (distY[0], distY[1], distY[2]) = (0.5e18, 0.25e18, 0.25e18);
-
-        IStrategy(strategy).rebalanceWithDistributionsFromLB(
-            uint24(activeId) - 1,
-            uint24(activeId) + 1,
-            uint24(activeId) - 100,
-            uint24(activeId) - 98,
-            uint24(activeId),
-            0,
-            distX,
-            distY,
-            1e18,
-            1e18
+        IStrategy(strategy).rebalance(
+            uint24(activeId) - 100, uint24(activeId) - 98, uint24(activeId), 0, amountsInY, 1e18, 1e18
         );
         vm.stopPrank();
 
         for (uint256 i = 0; i < 3; i++) {
-            uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(vault, activeId - 100 + i);
-            assertApproxEqRel(amount, distY[i] * 1e18 / 1e18, 1e14, "test_rebalanceWithDistributionsFromLBFar::1");
+            uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 100 + i);
+            assertApproxEqRel(amount, amountsInY[i], 1e14, "test_RebalanceFar::1");
         }
+    }
+
+    function test_revert_InvalidAmountsLength() external {
+        vm.expectRevert(IStrategy.Strategy__InvalidAmountsLength.selector);
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, new uint256[](0), 1e18, 1e18);
+    }
+
+    function test_revert_RangeTooWide() external {
+        vm.expectRevert(IStrategy.Strategy__RangeTooWide.selector);
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, new uint256[](52), 1e18, 1e18);
     }
 }
