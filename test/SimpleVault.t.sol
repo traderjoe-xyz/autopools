@@ -10,10 +10,14 @@ contract SimpleVaultTest is TestHelper {
 
         vm.startPrank(owner);
         vault = factory.createSimpleVault(ILBPair(wavax_usdc_20bp));
-        strategy = factory.createDefaultStrategy(vault);
-
-        factory.setStrategistFee(IStrategy(strategy), 0.1e4); // 10%
+        strategy = factory.createDefaultStrategy(IBaseVault(vault));
         vm.stopPrank();
+
+        vm.label(vault, "Vault Clone");
+        vm.label(strategy, "Strategy Clone");
+
+        vm.prank(address(factory));
+        IStrategy(strategy).setPendingAumAnnualFee(0.1e4); // 10%
     }
 
     function test_revert_initializeTwice() external {
@@ -34,7 +38,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(operator, address(0), "test_Operators::2");
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         (defaultOperator, operator) = ISimpleVault(vault).getOperators();
 
@@ -54,18 +58,27 @@ contract SimpleVaultTest is TestHelper {
         assertEq(address(ISimpleVault(vault).getStrategy()), address(0), "test_GetStrategy::1");
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         assertEq(address(ISimpleVault(vault).getStrategy()), strategy, "test_GetStrategy::2");
     }
 
-    function test_GetStrategistFee() external {
-        assertEq(ISimpleVault(vault).getStrategistFee(), 0, "test_GetStrategistFee::1");
+    function test_GetAumAnnualFee() external {
+        assertEq(ISimpleVault(vault).getAumAnnualFee(), 0, "test_GetAumAnnualFee::1");
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        vm.startPrank(owner);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
-        assertEq(ISimpleVault(vault).getStrategistFee(), 0.1e4, "test_GetStrategistFee::2");
+        deal(wavax, strategy, 4e18);
+        deal(usdc, strategy, 80e6);
+
+        uint256[] memory amountsInY = new uint256[](3);
+        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, amountsInY, 1e18, 1e18);
+        vm.stopPrank();
+
+        assertEq(ISimpleVault(vault).getAumAnnualFee(), 0.1e4, "test_GetAumAnnualFee::2");
     }
 
     function test_GetBalances() external {
@@ -91,7 +104,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(y, 1e18, "test_GetBalances::6");
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         (x, y) = ISimpleVault(vault).getBalances();
 
@@ -99,7 +112,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(y, 2e18, "test_GetBalances::8");
 
         vm.prank(owner);
-        factory.pauseVault(vault);
+        factory.setEmergencyMode(IBaseVault(vault));
 
         (x, y) = ISimpleVault(vault).getBalances();
 
@@ -114,7 +127,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(upper, 0, "test_GetRange::2");
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         (low, upper) = ISimpleVault(vault).getRange();
 
@@ -129,7 +142,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(y, 0, "test_GetPendingFees::2");
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         (x, y) = ISimpleVault(vault).getPendingFees();
 
@@ -145,7 +158,7 @@ contract SimpleVaultTest is TestHelper {
 
         uint256 max = x > y ? x : y;
 
-        assertEq(shares, max << 128, "testFuzz_PreviewShares::3");
+        assertEq(shares, max * 1e6, "testFuzz_PreviewShares::3");
     }
 
     function test_revert_PreviewShares(uint256 x, uint256 y) external {
@@ -156,31 +169,12 @@ contract SimpleVaultTest is TestHelper {
     }
 
     function test_Deposit() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e18);
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+        depositToVault(vault, bob, 0.5e18, 1e18);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(1e18, 1e18);
-        vm.stopPrank();
-
-        deal(wavax, bob, 0.5e18);
-        deal(usdc, bob, 1e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(0.5e18, 1e18);
-        vm.stopPrank();
-
-        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 << 128) - 1e6, "test_Deposit::1");
-        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 0.5e18 << 128, "test_Deposit::2");
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 * 1e6) - 1e6, "test_Deposit::1");
+        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 0.5e18 * 1e6, "test_Deposit::2");
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), 0, "test_Deposit::3");
         assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 0, "test_Deposit::4");
@@ -190,29 +184,12 @@ contract SimpleVaultTest is TestHelper {
     }
 
     function test_DepositOnlyX() external {
-        deal(wavax, alice, 1e18);
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 0);
+        depositToVault(vault, bob, 0.5e18, 1e18);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(1e18, 0);
-        vm.stopPrank();
-
-        deal(wavax, bob, 0.5e18);
-        deal(usdc, bob, 1e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(0.5e18, 1e18);
-        vm.stopPrank();
-
-        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 << 128) - 1e6, "test_DepositOnlyX::1");
-        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 0.5e18 << 128, "test_DepositOnlyX::2");
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 * 1e6) - 1e6, "test_DepositOnlyX::1");
+        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 0.5e18 * 1e6, "test_DepositOnlyX::2");
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), 0, "test_DepositOnlyX::3");
 
@@ -221,29 +198,12 @@ contract SimpleVaultTest is TestHelper {
     }
 
     function test_DepositOnlyY() external {
-        deal(usdc, alice, 1e18);
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 0, 1e18);
+        depositToVault(vault, bob, 0.5e18, 1e18);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(0, 1e18);
-        vm.stopPrank();
-
-        deal(wavax, bob, 0.5e18);
-        deal(usdc, bob, 1e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(0.5e18, 1e18);
-        vm.stopPrank();
-
-        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 << 128) - 1e6, "test_DepositOnlyY::1");
-        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 1e18 << 128, "test_DepositOnlyY::2");
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), (1e18 * 1e6) - 1e6, "test_DepositOnlyY::1");
+        assertEq(IERC20Upgradeable(vault).balanceOf(bob), 1e18 * 1e6, "test_DepositOnlyY::2");
 
         assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 0, "test_DepositOnlyY::4");
 
@@ -255,75 +215,48 @@ contract SimpleVaultTest is TestHelper {
         deal(wavax, alice, 1e18);
         deal(usdc, alice, 1e18);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        linkVaultToStrategy(vault, strategy);
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(1e18, 1e18);
-
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
+        depositToVault(vault, alice, 1e18, 1e18);
 
         vm.expectRevert(ISimpleVault.SimpleVault__ZeroCross.selector);
-        ISimpleVault(vault).deposit(0, 1e18);
+        this.depositToVault(vault, alice, 0, 1e18);
 
         vm.expectRevert(ISimpleVault.SimpleVault__ZeroCross.selector);
-        ISimpleVault(vault).deposit(1e18, 0);
-        vm.stopPrank();
+        this.depositToVault(vault, alice, 1e18, 0);
     }
 
-    function test_revert_DepsitTotalAmountsOverflow() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e18);
-
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, type(uint256).max);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).deposit(1e18, 1e18);
-        vm.stopPrank();
-
-        deal(wavax, bob, (1 << 128) - 1e18);
-        deal(usdc, bob, (1 << 128) - 1e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(wavax).transfer(vault, (1 << 128) - 1e18);
-        IERC20Upgradeable(usdc).transfer(vault, (1 << 128) - 1e18);
+    function test_revert_DepositTotalAmountsOverflow() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+        depositToVault(vault, bob, (1 << 128) - 1e18, (1 << 128) - 1e18);
 
         vm.expectRevert(ISimpleVault.SimpleVault__AmountsOverflow.selector);
-        ISimpleVault(vault).deposit(1e18, 1e18);
-        vm.stopPrank();
+        ISimpleVault(vault).deposit(1, 1);
+    }
+
+    function test_revert_Deposit() external {
+        vm.expectRevert(IBaseVault.BaseVault__ZeroAmount.selector);
+        this.depositToVault(vault, alice, 0, 0);
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        this.depositToVault(vault, alice, 1e18, 1e18);
+
+        linkVaultToStrategy(vault, strategy);
+
+        depositToVault(vault, alice, 0, 1e18);
+
+        vm.expectRevert(IBaseVault.BaseVault__ZeroShares.selector);
+        this.depositToVault(vault, alice, 1e18, 0);
     }
 
     function test_DepositNativeAvaxIsX() external {
-        deal(usdc, alice, 1e18);
+        linkVaultToStrategy(vault, strategy);
+        depositNativeToVault(vault, alice, 1e18, 1e18);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
-
-        vm.startPrank(alice);
-        vm.deal(alice, 10e18);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
-        vm.stopPrank();
-
-        deal(usdc, bob, 1e18);
-
-        vm.startPrank(bob);
-        vm.deal(bob, 10e18);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        uint256 balance = bob.balance;
-        ISimpleVault(vault).depositNative{value: 2e18}(2e18, 1e18);
+        uint256 balance = bob.balance + 2e18;
+        depositNativeToVault(vault, bob, 2e18, 1e18);
         uint256 balanceAfter = bob.balance;
-        vm.stopPrank();
 
         assertEq(balanceAfter, balance - 1e18, "test_DepositNative::1");
         assertEq(
@@ -335,23 +268,10 @@ contract SimpleVaultTest is TestHelper {
         vm.prank(owner);
         (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
 
-        vm.deal(alice, 10e18);
-        deal(joe, alice, 1e18);
+        depositNativeToVault(nativeIsYVault, alice, 1e18, 1e18);
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
-
-        ISimpleVault(nativeIsYVault).depositNative{value: 1e18}(1e18, 1e18);
-        vm.stopPrank();
-
-        deal(joe, bob, 1e18);
-
-        vm.startPrank(bob);
-        vm.deal(bob, 10e18);
-        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
-
-        uint256 balance = bob.balance;
-        ISimpleVault(nativeIsYVault).depositNative{value: 2e18}(1e18, 2e18);
+        uint256 balance = bob.balance + 2e18;
+        depositNativeToVault(nativeIsYVault, bob, 1e18, 2e18);
         uint256 balanceAfter = bob.balance;
         vm.stopPrank();
 
@@ -363,12 +283,52 @@ contract SimpleVaultTest is TestHelper {
         );
     }
 
+    function test_DepositZeroNativeX() external {
+        linkVaultToStrategy(vault, strategy);
+        depositNativeToVault(vault, alice, 0, 1e18);
+
+        depositNativeToVault(vault, bob, 0.5e18, 1e18);
+
+        assertEq(bob.balance, 0.5e18, "test_DepositZeroNativeX::1");
+    }
+
+    function test_DepositZeroTokenNativeIsX() external {
+        linkVaultToStrategy(vault, strategy);
+        depositNativeToVault(vault, alice, 1e18, 0);
+
+        depositNativeToVault(vault, bob, 1e18, 0.5e18);
+
+        assertEq(IERC20(usdc).balanceOf(bob), 0.5e18, "test_DepositZeroTokenNativeIsX::1");
+    }
+
+    function test_DepositZeroNativeY() external {
+        vm.prank(owner);
+        (address vault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+
+        depositNativeToVault(vault, alice, 1e18, 0);
+
+        depositNativeToVault(vault, bob, 1e18, 0.5e18);
+
+        assertEq(bob.balance, 0.5e18, "test_DepositZeroNativeY::1");
+    }
+
+    function test_DepositZeroTokenNativeIsY() external {
+        vm.prank(owner);
+        (address vault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+
+        depositNativeToVault(vault, alice, 0, 1e18);
+
+        depositNativeToVault(vault, bob, 0.5e18, 1e18);
+
+        assertEq(IERC20(joe).balanceOf(bob), 0.5e18, "test_DepositZeroTokenNativeIsY::1");
+    }
+
     function test_revert_DepositNative() external {
         vm.prank(owner);
         (address noNativeVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(usdt_usdc_1bp));
 
         vm.expectRevert(IBaseVault.BaseVault__NoNativeToken.selector);
-        ISimpleVault(noNativeVault).depositNative{value: 1e18}(1e18, 1e18);
+        this.depositNativeToVault(noNativeVault, alice, 1e18, 1e18);
 
         vm.prank(owner);
         (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
@@ -380,116 +340,100 @@ contract SimpleVaultTest is TestHelper {
         ISimpleVault(vault).depositNative{value: 1e18}(1e18 + 1, 1e18);
 
         vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
 
         deal(usdc, address(this), 2e18);
         IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
 
-        ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
+        depositToVault(vault, alice, 1e18, 1e18);
 
         vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
-        ISimpleVault(vault).depositNative{value: 2e18}(2e18, 1e18);
+        this.depositNativeToVault(vault, address(this), 2e18, 1e18);
     }
 
-    function test_WithdrawNativeAvaxIsX() external {
-        deal(usdc, alice, 1e18);
-        vm.deal(alice, 1e18);
+    function test_SetStrategy() external {
+        linkVaultToStrategy(vault, strategy);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        vm.startPrank(owner);
+        address newStrategy = factory.createDefaultStrategy(IBaseVault(vault));
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
-
+        factory.linkVaultToStrategy(IBaseVault(vault), newStrategy);
         vm.stopPrank();
-
-        deal(usdc, bob, 1e18);
-        vm.deal(bob, 10e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
-
-        (uint256 shares,,) = ISimpleVault(vault).depositNative{value: 10e18}(10e18, 1e18);
-
-        ISimpleVault(vault).withdrawNative(shares);
-        vm.stopPrank();
-
-        assertEq(ISimpleVault(vault).balanceOf(bob), 0, "test_WithdrawNative::1");
-
-        assertEq(IERC20Upgradeable(usdc).balanceOf(bob), 1e18, "test_WithdrawNative::2");
-        assertEq(bob.balance, 10e18, "test_WithdrawNative::3");
     }
 
-    function test_WithdrawNativeAvaxIsY() external {
-        vm.prank(owner);
-        (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+    function test_revert_SetStrategy() external {
+        address newStrategy = address(new MockStrategy());
 
-        vm.deal(alice, 1e18);
-        deal(joe, alice, 1e18);
+        vm.startPrank(address(factory));
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
+        MockStrategy(newStrategy).set(vault, address(0), address(0), address(0));
 
-        ISimpleVault(nativeIsYVault).depositNative{value: 1e18}(1e18, 1e18);
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
+
+        MockStrategy(newStrategy).set(vault, wavax_usdc_20bp, address(0), address(0));
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
+
+        MockStrategy(newStrategy).set(vault, wavax_usdc_20bp, wavax, address(0));
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
+
+        MockStrategy(newStrategy).set(vault, wavax_usdc_20bp, wavax, usdc);
+
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
+
+        vm.expectRevert(IBaseVault.BaseVault__SameStrategy.selector);
+        IBaseVault(vault).setStrategy(IStrategy(newStrategy));
+
         vm.stopPrank();
-
-        deal(joe, bob, 1e18);
-        vm.deal(bob, 10e18);
-
-        vm.startPrank(bob);
-        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
-
-        (uint256 shares,,) = ISimpleVault(nativeIsYVault).depositNative{value: 10e18}(1e18, 10e18);
-
-        ISimpleVault(nativeIsYVault).withdrawNative(shares);
-        vm.stopPrank();
-
-        assertEq(ISimpleVault(nativeIsYVault).balanceOf(bob), 0, "test_WithdrawNative::1");
-
-        assertEq(IERC20Upgradeable(joe).balanceOf(bob), 1e18, "test_WithdrawNative::2");
-        assertEq(bob.balance, 10e18, "test_WithdrawNative::3");
     }
 
-    function test_revert_WithdrawNative() external {
-        vm.prank(owner);
-        (address noNativeVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(usdt_usdc_1bp));
+    function test_RecoverVaultToken() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
 
-        vm.expectRevert(IBaseVault.BaseVault__NoNativeToken.selector);
-        ISimpleVault(noNativeVault).withdrawNative(1e18);
+        uint256 balance = IERC20Upgradeable(vault).balanceOf(alice);
 
-        vm.prank(owner);
-        factory.linkVaultToStrategy(vault, strategy);
+        vm.prank(alice);
+        IERC20(vault).transfer(address(vault), balance);
 
-        deal(usdc, alice, 1e18);
-        vm.deal(alice, 1e18);
+        assertEq(IERC20Upgradeable(vault).balanceOf(vault), balance + 1e6, "test_RecoverERC20::1");
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(usdc).approve(vault, type(uint256).max);
+        vm.expectRevert(IBaseVault.BaseVault__BurnMinShares.selector);
+        vm.prank(address(factory));
+        IBaseVault(vault).recoverERC20(IERC20Upgradeable(vault), alice, balance + 1);
 
-        (uint256 shares,,) = ISimpleVault(vault).depositNative{value: 1e18}(1e18, 1e18);
-        ISimpleVault(vault).transfer(address(this), shares);
-        vm.stopPrank();
+        vm.prank(address(factory));
+        IBaseVault(vault).recoverERC20(IERC20Upgradeable(vault), alice, balance);
 
-        vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
-        ISimpleVault(vault).withdrawNative(shares);
+        assertEq(IERC20Upgradeable(vault).balanceOf(vault), 1e6, "test_RecoverERC20::2");
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), balance, "test_RecoverERC20::3");
 
-        vm.prank(owner);
-        (address nativeIsYVault,) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(joe_wavax_15bp));
+        vm.prank(alice);
+        IERC20(vault).transfer(strategy, balance);
 
-        deal(joe, alice, 1e18);
-        vm.deal(alice, 1e18);
+        vm.expectRevert(IBaseVault.BaseVault__BurnMinShares.selector);
+        vm.prank(address(factory));
+        IBaseVault(vault).recoverERC20(IERC20Upgradeable(vault), alice, balance + 1);
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(joe).approve(nativeIsYVault, type(uint256).max);
+        vm.prank(address(factory));
+        IBaseVault(vault).recoverERC20(IERC20Upgradeable(vault), alice, balance);
 
-        (shares,,) = ISimpleVault(nativeIsYVault).depositNative{value: 1e18}(1e18, 1e18);
-        ISimpleVault(nativeIsYVault).transfer(address(this), shares);
-        vm.stopPrank();
+        assertEq(IERC20Upgradeable(vault).balanceOf(vault), 1e6, "test_RecoverERC20::4");
+        assertEq(IERC20Upgradeable(vault).balanceOf(strategy), 0, "test_RecoverERC20::5");
 
-        vm.expectRevert(IBaseVault.BaseVault__NativeTransferFailed.selector);
-        ISimpleVault(nativeIsYVault).withdrawNative(shares);
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), balance, "test_RecoverERC20::6");
+    }
+
+    function test_ReceiveNativeFromWNative() external {
+        vm.prank(wavax);
+        (bool s,) = vault.call{value: 1e18}("");
+        require(s);
     }
 
     function test_revert_SendEthToVaul() external {
@@ -499,5 +443,311 @@ contract SimpleVaultTest is TestHelper {
         vm.expectRevert(IBaseVault.BaseVault__OnlyWNative.selector);
         (bool s,) = vault.call{value: 1e18}("");
         require(s);
+    }
+
+    function test_Decimals() external {
+        assertEq(IERC20MetadataUpgradeable(vault).decimals(), 6 + 6, "test_Decimals::1");
+    }
+
+    function test_QueueAndRedeem() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        (uint256 amountX, uint256 amountY) = IBaseVault(vault).previewAmounts(shares);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), 0, "test_QueueWithdrawal::1");
+
+        uint256 round = IBaseVault(vault).getCurrentRound();
+
+        assertEq(round, 0, "test_QueueWithdrawal::2");
+
+        uint256 qShares = IBaseVault(vault).getQueuedWithdrawal(0, alice);
+        uint256 tShares = IBaseVault(vault).getTotalQueuedWithdrawal(0);
+
+        assertEq(tShares, shares, "test_QueueWithdrawal::3");
+        assertEq(qShares, shares, "test_QueueWithdrawal::4");
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        (uint256 balanceX, uint256 balanceY) = IBaseVault(vault).getBalances();
+        (uint256 rAmountX, uint256 rAmountY) = IBaseVault(vault).getRedeemableAmounts(0, alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        assertEq(IERC20(wavax).balanceOf(alice), amountX, "test_QueueWithdrawal::5");
+        assertEq(IERC20(usdc).balanceOf(alice), amountY, "test_QueueWithdrawal::6");
+
+        assertEq(rAmountX, amountX, "test_QueueWithdrawal::7");
+        assertEq(rAmountY, amountY, "test_QueueWithdrawal::8");
+
+        assertEq(IBaseVault(vault).getQueuedWithdrawal(0, alice), 0, "test_QueueWithdrawal::9");
+
+        (uint256 balanceX2, uint256 balanceY2) = IBaseVault(vault).getBalances();
+
+        assertEq(balanceX2, balanceX, "test_QueueWithdrawal::10");
+        assertEq(balanceY2, balanceY, "test_QueueWithdrawal::11");
+    }
+
+    function test_QueueAndRedeemNative() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        (uint256 amountX, uint256 amountY) = IBaseVault(vault).previewAmounts(shares);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), 0, "test_QueueWithdrawal::1");
+
+        uint256 round = IBaseVault(vault).getCurrentRound();
+
+        assertEq(round, 0, "test_QueueWithdrawal::2");
+
+        uint256 qShares = IBaseVault(vault).getQueuedWithdrawal(0, alice);
+        uint256 tShares = IBaseVault(vault).getTotalQueuedWithdrawal(0);
+
+        assertEq(tShares, shares, "test_QueueWithdrawal::3");
+        assertEq(qShares, shares, "test_QueueWithdrawal::4");
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        (uint256 balanceX, uint256 balanceY) = IBaseVault(vault).getBalances();
+        (uint256 rAmountX, uint256 rAmountY) = IBaseVault(vault).getRedeemableAmounts(0, alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).redeemQueuedWithdrawalNative(0, alice);
+
+        assertEq(alice.balance, amountX, "test_QueueWithdrawal::5");
+        assertEq(IERC20(usdc).balanceOf(alice), amountY, "test_QueueWithdrawal::6");
+
+        assertEq(rAmountX, amountX, "test_QueueWithdrawal::7");
+        assertEq(rAmountY, amountY, "test_QueueWithdrawal::8");
+
+        assertEq(IBaseVault(vault).getQueuedWithdrawal(0, alice), 0, "test_QueueWithdrawal::9");
+
+        (uint256 balanceX2, uint256 balanceY2) = IBaseVault(vault).getBalances();
+
+        assertEq(balanceX2, balanceX, "test_QueueWithdrawal::10");
+        assertEq(balanceY2, balanceY, "test_QueueWithdrawal::11");
+    }
+
+    function test_QueueAndCancel() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), 0, "test_QueueWithdrawal::1");
+        assertEq(IERC20Upgradeable(vault).balanceOf(strategy), shares, "test_QueueWithdrawal::2");
+
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(shares / 2, alice);
+
+        assertEq(IERC20Upgradeable(vault).balanceOf(alice), shares / 2, "test_QueueWithdrawal::3");
+        assertEq(IBaseVault(vault).getQueuedWithdrawal(0, alice), shares - shares / 2, "test_QueueWithdrawal::4");
+        assertEq(IBaseVault(vault).getTotalQueuedWithdrawal(0), shares - shares / 2, "test_QueueWithdrawal::5");
+        assertEq(IERC20Upgradeable(vault).balanceOf(strategy), shares - shares / 2, "test_QueueWithdrawal::6");
+    }
+
+    function test_revert_QueueWithdrawal() external {
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(1e18, alice);
+
+        linkVaultToStrategy(vault, strategy);
+
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(1, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__ZeroShares.selector);
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(0, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidRecipient.selector);
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(1e18, address(0));
+
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(1, alice);
+    }
+
+    function test_revert_CancelWithdrawal() external {
+        vm.expectRevert(IBaseVault.BaseVault__ZeroShares.selector);
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(0, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+
+        linkVaultToStrategy(vault, strategy);
+
+        vm.expectRevert(IBaseVault.BaseVault__MaxSharesExceeded.selector);
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(shares, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__MaxSharesExceeded.selector);
+        vm.prank(alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+    }
+
+    function test_revert_RedeemQueuedWithdrawal() external {
+        vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        vm.expectRevert();
+        IBaseVault(vault).redeemQueuedWithdrawal(1, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidRecipient.selector);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, address(0));
+
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+    }
+
+    function test_PreviewAmounts() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).totalSupply();
+
+        (uint256 amountX, uint256 amountY) = IBaseVault(vault).previewAmounts(0);
+
+        assertEq(amountX, 0, "test_QueueWithdrawal::1");
+        assertEq(amountY, 0, "test_QueueWithdrawal::2");
+
+        (amountX, amountY) = IBaseVault(vault).previewAmounts(shares);
+
+        assertEq(amountX, 1e18, "test_QueueWithdrawal::3");
+        assertEq(amountY, 1e18, "test_QueueWithdrawal::4");
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidShares.selector);
+        (amountX, amountY) = IBaseVault(vault).previewAmounts(shares + 1);
+    }
+
+    function test_revert_ExecuteQueuedWithdrawals() external {
+        vm.expectRevert(IBaseVault.BaseVault__OnlyStrategy.selector);
+        IBaseVault(vault).executeQueuedWithdrawals();
+
+        uint256 round = IBaseVault(vault).getCurrentRound();
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        vm.warp(block.timestamp + 3600);
+
+        assertEq(IBaseVault(vault).getTotalQueuedWithdrawal(round), 0, "test_QueueWithdrawal::1");
+        assertEq(IBaseVault(vault).getCurrentRound(), round, "test_QueueWithdrawal::2");
+
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(1, alice);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        vm.prank(strategy);
+        IBaseVault(vault).executeQueuedWithdrawals();
+
+        assertEq(IBaseVault(vault).getTotalQueuedWithdrawal(round), 1, "test_QueueWithdrawal::3");
+        assertEq(IBaseVault(vault).getCurrentRound(), round + 1, "test_QueueWithdrawal::4");
+    }
+
+    function test_EmergencyWithdraw() external {
+        linkVaultToStrategy(vault, strategy);
+        depositToVault(vault, alice, 1e18, 1e18);
+
+        uint256 shares = IERC20Upgradeable(vault).balanceOf(alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares / 2, alice);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        vm.expectRevert(IBaseVault.BaseVault__NotInEmergencyMode.selector);
+        IBaseVault(vault).emergencyWithdraw();
+
+        vm.prank(owner);
+        factory.setEmergencyMode(IBaseVault(vault));
+
+        vm.prank(alice);
+        IBaseVault(vault).emergencyWithdraw();
+
+        vm.expectRevert(IBaseVault.BaseVault__ZeroShares.selector);
+        vm.prank(alice);
+        IBaseVault(vault).emergencyWithdraw();
+
+        assertEq(IERC20Upgradeable(wavax).balanceOf(alice), 0.5e18 - 1, "test_EmergencyWithdraw::1");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(vault), 0.5e18 + 1, "test_EmergencyWithdraw::2");
+
+        assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 0.5e18 - 1, "test_EmergencyWithdraw::3");
+        assertEq(IERC20Upgradeable(usdc).balanceOf(vault), 0.5e18 + 1, "test_EmergencyWithdraw::4");
+
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        assertEq(IERC20Upgradeable(wavax).balanceOf(alice), 1e18 - 2, "test_EmergencyWithdraw::5");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(vault), 2, "test_EmergencyWithdraw::6");
+
+        assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 1e18 - 2, "test_EmergencyWithdraw::7");
+        assertEq(IERC20Upgradeable(usdc).balanceOf(vault), 2, "test_EmergencyWithdraw::8");
+    }
+}
+
+contract MockStrategy {
+    address public getVault;
+    address public getPair;
+    address public getTokenX;
+    address public getTokenY;
+
+    function set(address _vault, address _pair, address _tokenX, address _tokenY) external {
+        getVault = _vault;
+        getPair = _pair;
+        getTokenX = _tokenX;
+        getTokenY = _tokenY;
     }
 }

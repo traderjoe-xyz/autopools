@@ -47,4 +47,56 @@ contract TestHelper is Test {
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
         vm.stopPrank();
     }
+
+    function depositToVault(address newVault, address from, uint256 amountX, uint256 amountY) public {
+        IERC20Upgradeable tokenX = IBaseVault(newVault).getTokenX();
+        IERC20Upgradeable tokenY = IBaseVault(newVault).getTokenY();
+
+        deal(address(tokenX), from, amountX);
+        deal(address(tokenY), from, amountY);
+
+        // use `prank` instead of `starPrank` to allow revert anywhere and allow to skip the active prank error
+        vm.prank(from);
+        tokenX.approve(newVault, amountX);
+
+        vm.prank(from);
+        tokenY.approve(newVault, amountY);
+
+        vm.prank(from);
+        IBaseVault(newVault).deposit(amountX, amountY);
+    }
+
+    function depositNativeToVault(address newVault, address from, uint256 amountX, uint256 amountY) public {
+        IERC20Upgradeable tokenX = IBaseVault(newVault).getTokenX();
+        IERC20Upgradeable tokenY = IBaseVault(newVault).getTokenY();
+
+        bool isX = address(tokenX) == wavax;
+
+        if (isX) {
+            vm.deal(from, amountX);
+            deal(address(tokenY), from, amountY);
+        } else {
+            deal(address(tokenX), from, amountX);
+            vm.deal(from, amountY);
+        }
+
+        if (isX) {
+            vm.prank(from);
+            tokenY.approve(newVault, amountY);
+
+            vm.prank(from);
+            IBaseVault(newVault).depositNative{value: amountX}(amountX, amountY);
+        } else {
+            vm.prank(from);
+            tokenX.approve(newVault, amountX);
+
+            vm.prank(from);
+            IBaseVault(newVault).depositNative{value: amountY}(amountX, amountY);
+        }
+    }
+
+    function linkVaultToStrategy(address newVault, address newStrategy) public {
+        vm.prank(owner);
+        factory.linkVaultToStrategy(IBaseVault(newVault), newStrategy);
+    }
 }
