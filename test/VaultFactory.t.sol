@@ -215,6 +215,9 @@ contract VaultFactoryTest is TestHelper {
         IAggregatorV3 dfX = new MockAggregator();
         IAggregatorV3 dfY = new MockAggregator();
 
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.createOracleVault(ILBPair(usdt_usdc_1bp), dfX, dfY);
+
         vm.startPrank(owner);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -230,10 +233,14 @@ contract VaultFactoryTest is TestHelper {
 
         vm.expectRevert();
         factory.createOracleVault(ILBPair(usdt_usdc_1bp), dfX, IAggregatorV3(address(0)));
-        vm.stopPrank();
 
-        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setVaultImplementation(
+            IVaultFactory.VaultType.Oracle, address(new InvalidOracleVault(address(factory)))
+        );
+
+        vm.expectRevert(IVaultFactory.VaultFactory__InvalidOraclePrice.selector);
         factory.createOracleVault(ILBPair(usdt_usdc_1bp), dfX, dfY);
+        vm.stopPrank();
     }
 
     function test_CreateDefaultStrategy() public {
@@ -245,7 +252,7 @@ contract VaultFactoryTest is TestHelper {
         address vault = factory.createSimpleVault(ILBPair(wavax_usdc_20bp));
 
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, strategyImplementation);
-        strategy = factory.createDefaultStrategy(vault);
+        strategy = factory.createDefaultStrategy(IBaseVault(vault));
         vm.stopPrank();
 
         assertEq(address(IStrategy(strategy).getVault()), vault, "test_CreateDefaultStrategy::1");
@@ -265,7 +272,7 @@ contract VaultFactoryTest is TestHelper {
 
         vm.startPrank(owner);
         vm.expectRevert();
-        factory.createDefaultStrategy(address(0));
+        factory.createDefaultStrategy(IBaseVault(address(0)));
 
         factory.setVaultImplementation(IVaultFactory.VaultType.Simple, vaultImplementation);
         address vault = factory.createSimpleVault(ILBPair(wavax_usdc_20bp));
@@ -275,13 +282,13 @@ contract VaultFactoryTest is TestHelper {
                 IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector, IVaultFactory.StrategyType.Default
             )
         );
-        factory.createDefaultStrategy(vault);
+        factory.createDefaultStrategy(IBaseVault(vault));
 
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, strategyImplementation);
         vm.stopPrank();
 
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.createDefaultStrategy(vault);
+        factory.createDefaultStrategy(IBaseVault(vault));
     }
 
     function test_LinkVaultToStrategy() public {
@@ -293,9 +300,9 @@ contract VaultFactoryTest is TestHelper {
         address vault = factory.createSimpleVault(ILBPair(wavax_usdc_20bp));
 
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, strategyImplementation);
-        strategy = factory.createDefaultStrategy(vault);
+        strategy = factory.createDefaultStrategy(IBaseVault(vault));
 
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
         vm.stopPrank();
 
         assertEq(address(ISimpleVault(vault).getStrategy()), strategy, "test_LinkVaultToStrategy::1");
@@ -307,24 +314,24 @@ contract VaultFactoryTest is TestHelper {
         address strategyImplementation = address(new Strategy(factory));
 
         vm.startPrank(owner);
-        vm.expectRevert(IVaultFactory.VaultFactory__ZeroAddress.selector);
-        factory.linkVaultToStrategy(address(0), address(0));
+        vm.expectRevert(IVaultFactory.VaultFactory__InvalidStrategy.selector);
+        factory.linkVaultToStrategy(IBaseVault(address(0)), address(0));
 
         factory.setVaultImplementation(IVaultFactory.VaultType.Simple, vaultImplementation);
         address vault = factory.createSimpleVault(ILBPair(wavax_usdc_20bp));
 
-        vm.expectRevert(IVaultFactory.VaultFactory__ZeroAddress.selector);
-        factory.linkVaultToStrategy(vault, address(0));
+        vm.expectRevert(IVaultFactory.VaultFactory__InvalidStrategy.selector);
+        factory.linkVaultToStrategy(IBaseVault(vault), address(0));
 
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, strategyImplementation);
-        strategy = factory.createDefaultStrategy(vault);
+        strategy = factory.createDefaultStrategy(IBaseVault(vault));
 
         vm.expectRevert();
-        factory.linkVaultToStrategy(address(0), strategy);
+        factory.linkVaultToStrategy(IBaseVault(address(0)), strategy);
         vm.stopPrank();
 
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.linkVaultToStrategy(vault, strategy);
+        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
     }
 
     function test_CreateSimpleVaultAndDefaultStrategy() public {
@@ -470,7 +477,7 @@ contract VaultFactoryTest is TestHelper {
         factory.createOracleVaultAndDefaultStrategy(ILBPair(address(wavax_usdc_20bp)), dfX, dfY);
     }
 
-    function test_PauseVault() public {
+    function test_SetEmergencyMode() public {
         address vaultImplementation = address(new SimpleVault(factory));
         address strategyImplementation = address(new Strategy(factory));
 
@@ -481,18 +488,18 @@ contract VaultFactoryTest is TestHelper {
         (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
 
         deal(wavax, address(strategy), 1e18);
-        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 1e18, "test_PauseVault::1");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 1e18, "test_SetEmergencyMode::1");
 
-        factory.pauseVault(vault);
+        factory.setEmergencyMode(IBaseVault(vault));
         vm.stopPrank();
 
-        assertEq(address(ISimpleVault(vault).getStrategy()), address(0), "test_PauseVault::2");
+        assertEq(address(ISimpleVault(vault).getStrategy()), address(0), "test_SetEmergencyMode::2");
 
-        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 0, "test_PauseVault::3");
-        assertEq(IERC20Upgradeable(wavax).balanceOf(vault), 1e18, "test_PauseVault::4");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 0, "test_SetEmergencyMode::3");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(vault), 1e18, "test_SetEmergencyMode::4");
     }
 
-    function test_revert_PauseVault() public {
+    function test_revert_SetEmergencyMode() public {
         address vaultImplementation = address(new SimpleVault(factory));
         address strategyImplementation = address(new Strategy(factory));
 
@@ -503,11 +510,18 @@ contract VaultFactoryTest is TestHelper {
         (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
 
         deal(wavax, address(strategy), 1e18);
-        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 1e18, "test_revert_PauseVault::1");
+        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 1e18, "test_revert_SetEmergencyMode::1");
         vm.stopPrank();
 
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.pauseVault(vault);
+        factory.setEmergencyMode(IBaseVault(vault));
+
+        vm.startPrank(owner);
+        factory.setEmergencyMode(IBaseVault(vault));
+
+        vm.expectRevert();
+        factory.setEmergencyMode(IBaseVault(vault));
+        vm.stopPrank();
     }
 
     function test_RecoverERC20() public {
@@ -672,4 +686,112 @@ contract VaultFactoryTest is TestHelper {
 
         assertEq(IStrategy(strategy).getOperator(), address(1), "test_SetOperator::1");
     }
+
+    function test_SetPendingAumAnnualFee() public {
+        vm.startPrank(owner);
+        factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
+        factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
+
+        (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
+
+        (bool isSet, uint256 value) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertEq(isSet, false, "test_SetPendingAumAnnualFee::1");
+        assertEq(value, 0, "test_SetPendingAumAnnualFee::2");
+
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 100);
+        vm.stopPrank();
+
+        (isSet, value) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertEq(isSet, true, "test_SetPendingAumAnnualFee::3");
+        assertEq(value, 100, "test_SetPendingAumAnnualFee::4");
+
+        assertEq(IStrategy(strategy).getAumAnnualFee(), 0, "test_SetPendingAumAnnualFee::5");
+    }
+
+    function test_ResetPendingAumAnnualFee() public {
+        vm.startPrank(owner);
+        factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
+        factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
+
+        (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
+
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 100);
+        factory.resetPendingAumAnnualFee(IBaseVault(vault));
+        vm.stopPrank();
+
+        (bool isSet, uint256 value) = IStrategy(strategy).getPendingAumAnnualFee();
+
+        assertEq(isSet, false, "test_ResetPendingAumAnnualFee::1");
+        assertEq(value, 0, "test_ResetPendingAumAnnualFee::2");
+
+        assertEq(IStrategy(strategy).getAumAnnualFee(), 0, "test_ResetPendingAumAnnualFee::3");
+    }
+
+    function test_revert_SetAndResetPendingAumAnnualFee() public {
+        vm.startPrank(owner);
+        factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
+        factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
+
+        (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
+
+        vm.stopPrank();
+
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 100);
+
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.resetPendingAumAnnualFee(IBaseVault(vault));
+    }
+
+    function test_PauseDeposits() public {
+        vm.startPrank(owner);
+        factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
+        factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
+
+        (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
+
+        assertEq(IBaseVault(vault).isDepositsPaused(), false, "test_PauseDeposits::1");
+
+        factory.pauseDeposits(IBaseVault(vault));
+        vm.stopPrank();
+
+        assertEq(IBaseVault(vault).isDepositsPaused(), true, "test_Pausedeposits::2");
+    }
+
+    function test_ResumeDeposits() public {
+        vm.startPrank(owner);
+        factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
+        factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
+
+        (vault, strategy) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
+
+        factory.pauseDeposits(IBaseVault(vault));
+
+        assertEq(IBaseVault(vault).isDepositsPaused(), true, "test_ResumeDeposits::1");
+
+        factory.resumeDeposits(IBaseVault(vault));
+        vm.stopPrank();
+
+        assertEq(IBaseVault(vault).isDepositsPaused(), false, "test_ResumeDeposits::2");
+    }
+}
+
+contract InvalidOracleVault {
+    address private immutable _factory;
+
+    constructor(address factory) {
+        _factory = factory;
+    }
+
+    function getFactory() external view returns (address) {
+        return _factory;
+    }
+
+    function getPrice() external pure returns (uint256) {
+        return 0;
+    }
+
+    fallback() external {}
 }
