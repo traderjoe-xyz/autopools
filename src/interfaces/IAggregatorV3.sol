@@ -2,6 +2,11 @@
 
 pragma solidity 0.8.10;
 
+/**
+ * @title Aggregator V3 Interface
+ * @author Trader Joe
+ * @notice Interface used to interact with Chainlink datafeeds.
+ */
 interface IAggregatorV3 {
     function decimals() external view returns (uint8);
 
