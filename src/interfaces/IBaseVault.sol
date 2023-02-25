@@ -8,24 +8,54 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {IStrategy} from "./IStrategy.sol";
 import {IVaultFactory} from "./IVaultFactory.sol";
 
+/**
+ * @title Base Vault Interface
+ * @author Trader Joe
+ * @notice Interface used to interact with Liquidity Book Vaults
+ */
 interface IBaseVault is IERC20Upgradeable {
-    error BaseVault__ZeroAmount();
-    error BaseVault__OnlyFactory();
+    error BaseVault__BurnMinShares();
+    error BaseVault__DepositsPaused();
+    error BaseVault__InvalidNativeAmount();
+    error BaseVault__InvalidRecipient();
+    error BaseVault__InvalidShares();
     error BaseVault__InvalidStrategy();
     error BaseVault__InvalidToken();
-    error BaseVault__SameStrategy();
-    error BaseVault__InvalidShares();
-    error BaseVault__ZeroShares();
-    error BaseVault__BurnMinShares();
     error BaseVault__NoNativeToken();
-    error BaseVault__InvalidNativeAmount();
+    error BaseVault__NoQueuedWithdrawal();
+    error BaseVault__MaxSharesExceeded();
+    error BaseVault__NotInEmergencyMode();
     error BaseVault__NativeTransferFailed();
+    error BaseVault__OnlyFactory();
     error BaseVault__OnlyWNative();
-    error BaseVault__DepositsPaused();
+    error BaseVault__OnlyStrategy();
+    error BaseVault__SameStrategy();
+    error BaseVault__ZeroAmount();
+    error BaseVault__ZeroShares();
+
+    struct QueuedWithdrawal {
+        mapping(address => uint256) userWithdrawals;
+        uint256 totalQueuedShares;
+        uint128 totalAmountX;
+        uint128 totalAmountY;
+    }
 
     event Deposited(address indexed user, uint256 amountX, uint256 amountY, uint256 shares);
 
-    event Withdrawn(address indexed user, uint256 amountX, uint256 amountY, uint256 shares);
+    event WithdrawalQueued(address indexed sender, address indexed user, uint256 indexed round, uint256 shares);
+
+    event WithdrawalCancelled(address indexed sender, address indexed recipient, uint256 indexed round, uint256 shares);
+
+    event WithdrawalRedeemed(
+        address indexed sender,
+        address indexed recipient,
+        uint256 indexed round,
+        uint256 shares,
+        uint256 amountX,
+        uint256 amountY
+    );
+
+    event WithdrawalExecuted(uint256 indexed round, uint256 totalQueuedQhares, uint256 amountX, uint256 amountY);
 
     event StrategySet(IStrategy strategy);
 
@@ -36,6 +66,10 @@ interface IBaseVault is IERC20Upgradeable {
     event DepositsPaused();
 
     event DepositsResumed();
+
+    event EmergencyMode();
+
+    event EmergencyWithdrawal(address indexed sender, uint256 shares, uint256 amountX, uint256 amountY);
 
     function getFactory() external view returns (IVaultFactory);
 
@@ -66,6 +100,19 @@ interface IBaseVault is IERC20Upgradeable {
 
     function isDepositsPaused() external view returns (bool);
 
+    function getCurrentRound() external view returns (uint256 round);
+
+    function getQueuedWithdrawal(uint256 round, address user) external view returns (uint256 shares);
+
+    function getTotalQueuedWithdrawal(uint256 round) external view returns (uint256 totalQueuedShares);
+
+    function getCurrentTotalQueuedWithdrawal() external view returns (uint256 totalQueuedShares);
+
+    function getRedeemableAmounts(uint256 round, address user)
+        external
+        view
+        returns (uint256 amountX, uint256 amountY);
+
     function deposit(uint256 amountX, uint256 amountY)
         external
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY);
@@ -75,9 +122,21 @@ interface IBaseVault is IERC20Upgradeable {
         payable
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY);
 
-    function withdraw(uint256 shares) external returns (uint256 amountX, uint256 amountY);
+    function queueWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
 
-    function withdrawNative(uint256 shares) external returns (uint256 amountX, uint256 amountY);
+    function cancelQueuedWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
+
+    function redeemQueuedWithdrawal(uint256 round, address recipient)
+        external
+        returns (uint256 amountX, uint256 amountY);
+
+    function redeemQueuedWithdrawalNative(uint256 round, address recipient)
+        external
+        returns (uint256 amountX, uint256 amountY);
+
+    function emergencyWithdraw() external;
+
+    function executeQueuedWithdrawals() external;
 
     function initialize(string memory name, string memory symbol) external;
 
@@ -87,7 +146,7 @@ interface IBaseVault is IERC20Upgradeable {
 
     function resumeDeposits() external;
 
-    function emergencyWithdraw() external;
+    function setEmergencyMode() external;
 
     function recoverERC20(IERC20Upgradeable token, address recipient, uint256 amount) external;
 }

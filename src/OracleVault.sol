@@ -29,7 +29,7 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 contract OracleVault is BaseVault, IOracleVault {
     using Math512Bits for uint256;
 
-    uint256 private constant _SCALE_OFFSET = 128;
+    uint256 private constant _PRICE_OFFSET = 128;
 
     /**
      * @dev Constructor of the contract.
@@ -62,22 +62,6 @@ contract OracleVault is BaseVault, IOracleVault {
     }
 
     /**
-     * @dev Returns the decimals of the token X.
-     * @return decimalsX The decimals of the token X.
-     */
-    function _decimalsX() internal pure virtual returns (uint256 decimalsX) {
-        return _getArgUint8(60);
-    }
-
-    /**
-     * @dev Returns the decimals of the token Y.
-     * @return decimalsY The decimals of the token Y.
-     */
-    function _decimalsY() internal pure virtual returns (uint256 decimalsY) {
-        return _getArgUint8(61);
-    }
-
-    /**
      * @dev Returns the data feed of the token X.
      * @return dataFeedX The data feed of the token X.
      */
@@ -96,14 +80,12 @@ contract OracleVault is BaseVault, IOracleVault {
     /**
      * @dev Returns the price of a token using its oracle.
      * @param dataFeed The data feed of the token.
-     * @return price The oracle latest answer.
+     * @return uintPrice The oracle latest answer.
      */
-    function _getOraclePrice(IAggregatorV3 dataFeed) internal view returns (uint256) {
+    function _getOraclePrice(IAggregatorV3 dataFeed) internal view returns (uint256 uintPrice) {
         (, int256 price,,,) = dataFeed.latestRoundData();
 
-        if (price <= 0 || uint256(price) > type(uint128).max) revert OracleVault__InvalidPrice();
-
-        return uint256(price);
+        if (price <= 0 || (uintPrice = uint256(price)) > type(uint128).max) revert OracleVault__InvalidPrice();
     }
 
     /**
@@ -117,7 +99,9 @@ contract OracleVault is BaseVault, IOracleVault {
 
         // Essentially does `price = (priceX / 1eDecimalsX) / (priceY / 1eDecimalsY)`
         // with 128.128 binary fixed point arithmetic.
-        price = scaledPriceX.shiftDivRoundDown(_SCALE_OFFSET, scaledPriceY);
+        price = scaledPriceX.shiftDivRoundDown(_PRICE_OFFSET, scaledPriceY);
+
+        if (price == 0) revert OracleVault__InvalidPrice();
     }
 
     /**
@@ -143,9 +127,7 @@ contract OracleVault is BaseVault, IOracleVault {
 
         uint256 valueInY = _getValueInY(price, amountX, amountY);
 
-        if (totalShares == 0) {
-            return (valueInY, amountX, amountY);
-        }
+        if (totalShares == 0) return (valueInY * _SHARES_PRECISION, amountX, amountY);
 
         (uint256 totalX, uint256 totalY) = _getBalances(strategy);
         uint256 totalValueInY = _getValueInY(price, totalX, totalY);
@@ -163,7 +145,7 @@ contract OracleVault is BaseVault, IOracleVault {
      * @return valueInY The value of amounts in token Y.
      */
     function _getValueInY(uint256 price, uint256 amountX, uint256 amountY) internal pure returns (uint256 valueInY) {
-        uint256 amountXInY = price.mulDivRoundDown(amountX, _SCALE_OFFSET);
+        uint256 amountXInY = price.mulShiftRoundDown(amountX, _PRICE_OFFSET);
         return amountXInY + amountY;
     }
 }
