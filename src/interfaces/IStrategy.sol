@@ -7,6 +7,11 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 import {IVaultFactory} from "./IVaultFactory.sol";
 
+/**
+ * @title Strategy Interface
+ * @author Trader Joe
+ * @notice Interface used to interact with Liquidity Book Vaults' Strategies
+ */
 interface IStrategy {
     error Strategy__OnlyFactory();
     error Strategy__OnlyVault();
@@ -25,6 +30,8 @@ interface IStrategy {
     error Strategy__ActiveIdSlippageExceeded();
     error Strategy__ActiveIdSlippage();
     error Strategy__RangeAlreadySet();
+    error Strategy__RangeTooWide();
+    error Strategy__InvalidAmountsLength();
 
     event OperatorSet(address operator);
 
@@ -66,11 +73,9 @@ interface IStrategy {
 
     function initialize() external;
 
-    function withdraw(uint256 shares, uint256 totalSupply, address to)
-        external
-        returns (uint256 amountX, uint256 amountY);
+    function withdrawAll() external;
 
-    function rebalanceFromLB(
+    function rebalance(
         uint24 newLower,
         uint24 newUpper,
         uint24 desiredActiveId,
