@@ -7,12 +7,20 @@ import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
 import {IAggregatorV3} from "./IAggregatorV3.sol";
 import {IStrategy} from "./IStrategy.sol";
+import {IBaseVault} from "./IBaseVault.sol";
 
+/**
+ * @title Vault Factory Interface
+ * @author Trader Joe
+ * @notice Interface used to interact with the Factory for Liquidity Book Vaults
+ */
 interface IVaultFactory {
     error VaultFactory__VaultImplementationNotSet(VaultType vType);
     error VaultFactory__StrategyImplementationNotSet(StrategyType sType);
     error VaultFactory__InvalidVaultType();
     error VaultFactory__ZeroAddress();
+    error VaultFactory__InvalidOraclePrice();
+    error VaultFactory__InvalidStrategy();
 
     enum VaultType {
         Simple,
@@ -72,9 +80,9 @@ interface IVaultFactory {
 
     function setOperator(IStrategy strategy, address operator) external;
 
-    function setPendingAumAnnualFee(IStrategy strategy, uint16 pendingAumAnnualFee) external;
+    function setPendingAumAnnualFee(IBaseVault vault, uint16 pendingAumAnnualFee) external;
 
-    function resetPendingAumAnnualFee(IStrategy strategy) external;
+    function resetPendingAumAnnualFee(IBaseVault vault) external;
 
     function setFeeRecipient(address feeRecipient) external;
 
@@ -90,15 +98,15 @@ interface IVaultFactory {
 
     function createSimpleVault(ILBPair lbPair) external returns (address vault);
 
-    function createDefaultStrategy(address vault) external returns (address strategy);
+    function createDefaultStrategy(IBaseVault vault) external returns (address strategy);
 
-    function linkVaultToStrategy(address vault, address strategy) external;
+    function linkVaultToStrategy(IBaseVault vault, address strategy) external;
 
-    function pauseDeposits(address vault) external;
+    function pauseDeposits(IBaseVault vault) external;
 
-    function resumeDeposits(address vault) external;
+    function resumeDeposits(IBaseVault vault) external;
 
-    function emergencyWithdraw(address vault) external;
+    function setEmergencyMode(IBaseVault vault) external;
 
-    function recoverERC20(address vault, IERC20Upgradeable token, address recipient, uint256 amount) external;
+    function recoverERC20(IBaseVault vault, IERC20Upgradeable token, address recipient, uint256 amount) external;
 }
