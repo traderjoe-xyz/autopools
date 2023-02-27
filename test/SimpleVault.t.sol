@@ -72,10 +72,10 @@ contract SimpleVaultTest is TestHelper {
         deal(wavax, strategy, 4e18);
         deal(usdc, strategy, 80e6);
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
 
-        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, amountsInY, 1e18, 1e18);
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, desiredL, 1e18, 1e18);
         vm.stopPrank();
 
         assertEq(ISimpleVault(vault).getAumAnnualFee(), 0.1e4, "test_GetAumAnnualFee::2");

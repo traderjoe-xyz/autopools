@@ -21,7 +21,7 @@ library Distribution {
 
     /**
      * @notice Returns the distribution following a given composition factor, price and amounts valued in Y.
-     * @param amountsInY The amounts of tokens to distribute.
+     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
      * @param compositionFactor The composition factor.
      * @param price The price of the token.
      * @param index The index of the active amount.
@@ -30,7 +30,7 @@ library Distribution {
      * @return distributionX The distribution of token X.
      * @return distributionY The distribution of token Y.
      */
-    function getDistributions(uint256[] memory amountsInY, uint256 compositionFactor, uint256 price, uint256 index)
+    function getDistributions(uint256[] memory desiredL, uint256 compositionFactor, uint256 price, uint256 index)
         internal
         pure
         returns (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY)
@@ -38,10 +38,10 @@ library Distribution {
         if (compositionFactor > ONE) revert Distribution__CompositionFactorTooHigh();
         if (price == 0) revert Distribution__PriceTooLow();
 
-        distributionX = new uint256[](amountsInY.length);
-        distributionY = new uint256[](amountsInY.length);
+        distributionX = new uint256[](desiredL.length);
+        distributionY = new uint256[](desiredL.length);
 
-        uint256 activeAmount = amountsInY[index];
+        uint256 activeAmount = desiredL[index];
 
         if (activeAmount > type(uint128).max) revert Distribution__AmountTooHigh();
 
@@ -51,13 +51,13 @@ library Distribution {
         distributionX[index] = amountX;
         distributionY[index] = amountY;
 
-        amountX = computeDistributionX(amountsInY, distributionX, price, amountX, index, true);
-        amountY = computeDistributionY(amountsInY, distributionY, amountY, index, true);
+        amountX = computeDistributionX(desiredL, distributionX, price, amountX, index, true);
+        amountY = computeDistributionY(desiredL, distributionY, amountY, index, true);
     }
 
     /**
      * @notice Computes the distribution Y following a given composition factor, price and amounts valued in Y.
-     * @param amountsInY The amounts of tokens to distribute.
+     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
      * @param distributionY The distribution of token Y.
      * @param amountY The amount of token Y.
      * @param end The index of the last amount to compute.
@@ -65,14 +65,14 @@ library Distribution {
      * @return The amount of token Y.
      */
     function computeDistributionY(
-        uint256[] memory amountsInY,
+        uint256[] memory desiredL,
         uint256[] memory distributionY,
         uint256 amountY,
         uint256 end,
         bool endIsActive
     ) internal pure returns (uint256) {
         for (uint256 i; i < end;) {
-            uint256 amountInY = amountsInY[i];
+            uint256 amountInY = desiredL[i];
             if (amountInY > type(uint128).max) revert Distribution__AmountTooHigh();
 
             amountY += amountInY;
@@ -90,7 +90,7 @@ library Distribution {
 
     /**
      * @notice Computes the distribution X following a given composition factor, price and amounts valued in Y.
-     * @param amountsInY The amounts of tokens to distribute.
+     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
      * @param distributionX The distribution of token X.
      * @param price The price of the token.
      * @param amountX The amount of token X.
@@ -99,15 +99,15 @@ library Distribution {
      * @return The amount of token X.
      */
     function computeDistributionX(
-        uint256[] memory amountsInY,
+        uint256[] memory desiredL,
         uint256[] memory distributionX,
         uint256 price,
         uint256 amountX,
         uint256 start,
         bool startIsActive
     ) internal pure returns (uint256) {
-        for (uint256 i = startIsActive ? start + 1 : start; i < amountsInY.length;) {
-            uint256 amountInY = amountsInY[i];
+        for (uint256 i = startIsActive ? start + 1 : start; i < desiredL.length;) {
+            uint256 amountInY = desiredL[i];
             uint256 amountInX = (amountInY << OFFSET) / price;
 
             if (amountInY > type(uint128).max || amountInX > type(uint128).max) revert Distribution__AmountTooHigh();
@@ -120,7 +120,7 @@ library Distribution {
             }
         }
 
-        computeDistribution(distributionX, amountX, start, amountsInY.length);
+        computeDistribution(distributionX, amountX, start, desiredL.length);
 
         return amountX;
     }

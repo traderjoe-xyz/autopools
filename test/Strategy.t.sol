@@ -126,7 +126,7 @@ contract StrategyTest is TestHelper {
     }
 
     function test_RebalanceClose() public {
-        uint256 amountX = 1e18;
+        uint256 amountX = 1e24;
         uint256 amountY = 1e18;
 
         deal(wavax, strategy, amountX);
@@ -134,12 +134,12 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
@@ -179,17 +179,17 @@ contract StrategyTest is TestHelper {
     }
 
     function test_WithdrawAll() external {
-        uint256 amountX = 1e18;
+        uint256 amountX = 1e24;
         uint256 amountY = 1e18;
 
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
 
         vm.startPrank(owner);
-        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, amountsInY, 1e18, 1e18);
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, desiredL, 1e18, 1e18);
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
@@ -283,7 +283,7 @@ contract StrategyTest is TestHelper {
     }
 
     function test_RebalanceAmounts() external {
-        uint256 amountX = 1e18;
+        uint256 amountX = 1e24;
         uint256 amountY = 1e18;
 
         deal(wavax, strategy, amountX);
@@ -291,20 +291,20 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (30e6, 60e6, 30e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (30e6, 60e6, 30e6);
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
-        amountsInY = new uint256[](5);
+        desiredL = new uint256[](5);
 
-        (amountsInY[0], amountsInY[1], amountsInY[2], amountsInY[3], amountsInY[4]) = (10e6, 20e6, 60e6, 20e6, 10e6);
+        (desiredL[0], desiredL[1], desiredL[2], desiredL[3], desiredL[4]) = (10e6, 20e6, 60e6, 20e6, 10e6);
 
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
         vm.stopPrank();
 
@@ -323,7 +323,7 @@ contract StrategyTest is TestHelper {
     }
 
     function test_RebalanceFar() external {
-        uint256 amountX = 1e18;
+        uint256 amountX = 1e24;
         uint256 amountY = 1e18;
 
         deal(wavax, strategy, amountX);
@@ -331,22 +331,22 @@ contract StrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 100, uint24(activeId) - 98, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 100, uint24(activeId) - 98, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
         vm.stopPrank();
 
         for (uint256 i = 0; i < 3; i++) {
             uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 100 + i);
-            assertApproxEqRel(amount, amountsInY[i], 1e14, "test_RebalanceFar::1");
+            assertApproxEqRel(amount, desiredL[i], 1e14, "test_RebalanceFar::1");
         }
     }
 
@@ -360,5 +360,42 @@ contract StrategyTest is TestHelper {
         vm.expectRevert(IStrategy.Strategy__RangeTooWide.selector);
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, new uint256[](52), 1e18, 1e18);
+    }
+
+    function test_revert_MaxAmountExceededY() external {
+        uint256[] memory desiredL = new uint256[](2);
+        (desiredL[0], desiredL[1]) = (10e6, 10e6 + 1);
+
+        deal(usdc, strategy, 20e6);
+
+        vm.expectRevert(IStrategy.Strategy__MaxAmountExceeded.selector);
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, desiredL, 0, 1e18);
+
+        (desiredL[0], desiredL[1]) = (10e6, 10e6);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, desiredL, 0, 1e18);
+    }
+
+    function test_revert_MaxAmountExceededX() external {
+        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+
+        uint256[] memory desiredL = new uint256[](2);
+        (desiredL[0], desiredL[1]) = (price * 1e18 >> 128, price * 1e18 >> 128);
+
+        uint256 wavaxAmount = (desiredL[0] << 128) / price + (desiredL[1] << 128) / price;
+
+        deal(wavax, strategy, wavaxAmount - 1);
+
+        vm.expectRevert(IStrategy.Strategy__MaxAmountExceeded.selector);
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, desiredL, 1e18, 0);
+
+        deal(wavax, strategy, wavaxAmount);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, desiredL, 1e18, 0);
     }
 }

@@ -243,7 +243,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
      * @param newUpper The upper bound of the new range.
      * @param desiredActiveId The desired active id.
      * @param slippageActiveId The slippage active id.
-     * @param amountsInY The amounts of tokens, valued in Y.
+     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
      * @param maxPercentageToAddX The maximum percentage of token X to add.
      * @param maxPercentageToAddY The maximum percentage of token Y to add.
      */
@@ -252,7 +252,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
-        uint256[] memory amountsInY,
+        uint256[] memory desiredL,
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY
     ) external override onlyOperators {
@@ -275,7 +275,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
             // LB pair to avoid the active fee.
             (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
             _getDistributionsAndAmounts(
-                activeId, newLower, newUpper, maxPercentageToAddX, maxPercentageToAddY, amountsInY
+                activeId, newLower, newUpper, maxPercentageToAddX, maxPercentageToAddY, desiredL
             );
 
             // Deposit the tokens to the LB pool.
@@ -497,13 +497,13 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @dev Returns the distributions and amounts following the `amountsInY`.
+     * @dev Returns the distributions and amounts following the `desiredL`.
      * @param activeId The active id of the pair.
      * @param newLower The lower end of the new range.
      * @param newUpper The upper end of the new range.
      * @param maxPercentageToAddX The maximum percentage of token X to add.
      * @param maxPercentageToAddY The maximum percentage of token Y to add.
-     * @param amountsInY The amounts of token, valued in token Y, to add.
+     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
      * @return amountX The amount of token X to add.
      * @return amountY The amount of token Y to add.
      * @return distributionX The distribution of token X to add.
@@ -515,7 +515,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         uint24 newUpper,
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY,
-        uint256[] memory amountsInY
+        uint256[] memory desiredL
     )
         internal
         view
@@ -523,7 +523,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     {
         // Check if the range is valid and the amounts length is valid.
         if (newLower > newUpper) revert Strategy__InvalidRange();
-        if (amountsInY.length != newUpper - newLower + 1) revert Strategy__InvalidAmountsLength();
+        if (desiredL.length != newUpper - newLower + 1) revert Strategy__InvalidAmountsLength();
 
         // Get the active bin's price.
         uint256 price = uint256(activeId).getPriceFromId(_binStep());
@@ -533,19 +533,19 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
             // Get the composition factor.
             uint256 compositionFactor = _getCompositionFactor(price, activeId);
 
-            // Get the distributions and amounts following the `amountsInY` and the composition factor.
+            // Get the distributions and amounts following the `desiredL` and the composition factor.
             (amountX, amountY, distributionX, distributionY) =
-                amountsInY.getDistributions(compositionFactor, price, activeId - newLower);
+                desiredL.getDistributions(compositionFactor, price, activeId - newLower);
         } else {
-            distributionX = new uint256[](amountsInY.length);
-            distributionY = new uint256[](amountsInY.length);
+            distributionX = new uint256[](desiredL.length);
+            distributionY = new uint256[](desiredL.length);
 
             if (activeId < newLower) {
                 // If the active id is lower than the new range, only X needs to be added.
-                amountX = amountsInY.computeDistributionX(distributionX, price, 0, 0, false);
+                amountX = desiredL.computeDistributionX(distributionX, price, 0, 0, false);
             } else {
                 // If the active id is greater than the new range, only Y needs to be added.
-                amountY = amountsInY.computeDistributionY(distributionY, 0, amountsInY.length, false);
+                amountY = desiredL.computeDistributionY(distributionY, 0, desiredL.length, false);
             }
         }
 
@@ -553,16 +553,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         uint256 maxAmountX = _tokenX().balanceOf(address(this)) * maxPercentageToAddX / _PRECISION;
         uint256 maxAmountY = _tokenY().balanceOf(address(this)) * maxPercentageToAddY / _PRECISION;
 
-        // If the amounts are greater than the maximum amounts, adjust them.
-        if (amountX == 0 || amountY == 0) {
-            amountX = amountX > maxAmountX ? maxAmountX : amountX;
-            amountY = amountY > maxAmountY ? maxAmountY : amountY;
-        } else if (amountX > maxAmountX || amountY > maxAmountY) {
-            // Adjust the amounts to the maximum amounts while keeping the composition factor.
-            (amountX, amountY) = maxAmountX * amountY > maxAmountY * amountX
-                ? (amountX * maxAmountY / amountY, maxAmountY)
-                : (maxAmountX, amountY * maxAmountX / amountX);
-        }
+        if (amountX > maxAmountX || amountY > maxAmountY) revert Strategy__MaxAmountExceeded();
     }
 
     /**

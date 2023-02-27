@@ -32,6 +32,7 @@ interface IStrategy {
     error Strategy__RangeAlreadySet();
     error Strategy__RangeTooWide();
     error Strategy__InvalidAmountsLength();
+    error Strategy__MaxAmountExceeded();
 
     event OperatorSet(address operator);
 
@@ -80,7 +81,7 @@ interface IStrategy {
         uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
-        uint256[] memory amountsInY,
+        uint256[] memory desiredL,
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY
     ) external;
