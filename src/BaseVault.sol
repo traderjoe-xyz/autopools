@@ -44,6 +44,9 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
     IStrategy private _strategy;
     bool private _depositsPaused;
+    bool private _whitelistStatus;
+
+    mapping(address => bool) private _whitelistedUsers;
 
     QueuedWithdrawal[] private _queuedWithdrawalsByRound;
 
@@ -59,10 +62,11 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @dev Modifier to check if the deposits are not paused.
+     * @dev Modifier to check if deposits are allowed for the sender.
      */
-    modifier whenDepositsNotPaused() {
+    modifier depositsAllowed() {
         if (_depositsPaused) revert BaseVault__DepositsPaused();
+        if (_whitelistStatus && !_whitelistedUsers[msg.sender]) revert BaseVault__NotWhitelisted(msg.sender);
         _;
     }
 
@@ -268,6 +272,23 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
+     * @notice Returns if the vault is in whitelist mode.
+     * @return whitelist True if the vault is in whitelist mode.
+     */
+    function isWhitelistedOnly() public view virtual override returns (bool whitelist) {
+        return _whitelistStatus;
+    }
+
+    /**
+     * @notice Returns true if the user is whitelisted or if the vault is not in whitelist mode.
+     * @param user The user.
+     * @return whitelisted True if the user is whitelisted or if the vault is not in whitelist mode.
+     */
+    function isWhitelisted(address user) public view virtual override returns (bool whitelisted) {
+        return !_whitelistStatus || _whitelistedUsers[user];
+    }
+
+    /**
      * @notice Returns the current round of queued withdrawals.
      * @return round The current round of queued withdrawals.
      */
@@ -347,7 +368,6 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         virtual
         override
         nonReentrant
-        whenDepositsNotPaused
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY)
     {
         // Calculate the shares and effective amounts, also returns the strategy to save gas.
@@ -373,7 +393,6 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         virtual
         override
         nonReentrant
-        whenDepositsNotPaused
         onlyVaultWithNativeToken
         returns (uint256 shares, uint256 effectiveX, uint256 effectiveY)
     {
@@ -677,6 +696,46 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
+     * @dev Sets the whitelist state.
+     * @param state The new whitelist state.
+     */
+    function setWhitelistState(bool state) public virtual override onlyFactory nonReentrant {
+        if (_whitelistStatus == state) revert BaseVault__SameWhitelistState();
+
+        _whitelistStatus = state;
+
+        emit WhitelistStateChanged(state);
+    }
+
+    /**
+     * @dev Adds addresses to the whitelist.
+     * @param addresses The addresses to be added to the whitelist.
+     */
+    function addToWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            if (_whitelistedUsers[addresses[i]]) revert BaseVault__AlreadyWhitelisted(addresses[i]);
+
+            _whitelistedUsers[addresses[i]] = true;
+        }
+
+        emit WhitelistAdded(addresses);
+    }
+
+    /**
+     * @dev Removes addresses from the whitelist.
+     * @param addresses The addresses to be removed from the whitelist.
+     */
+    function removeFromWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            if (!_whitelistedUsers[addresses[i]]) revert BaseVault__NotWhitelisted(addresses[i]);
+
+            _whitelistedUsers[addresses[i]] = false;
+        }
+
+        emit WhitelistRemoved(addresses);
+    }
+
+    /**
      * @notice Sets the vault in emergency mode.
      * @dev This will pause deposits and withdraw all tokens from the strategy.
      */
@@ -852,6 +911,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     function _deposit(uint256 amountX, uint256 amountY)
         internal
         virtual
+        depositsAllowed
         returns (IStrategy strategy, uint256 shares, uint256 effectiveX, uint256 effectiveY)
     {
         // Check that at least one token is being deposited

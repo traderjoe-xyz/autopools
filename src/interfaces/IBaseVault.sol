@@ -14,6 +14,7 @@ import {IVaultFactory} from "./IVaultFactory.sol";
  * @notice Interface used to interact with Liquidity Book Vaults
  */
 interface IBaseVault is IERC20Upgradeable {
+    error BaseVault__AlreadyWhitelisted(address user);
     error BaseVault__BurnMinShares();
     error BaseVault__DepositsPaused();
     error BaseVault__InvalidNativeAmount();
@@ -24,12 +25,14 @@ interface IBaseVault is IERC20Upgradeable {
     error BaseVault__NoNativeToken();
     error BaseVault__NoQueuedWithdrawal();
     error BaseVault__MaxSharesExceeded();
-    error BaseVault__NotInEmergencyMode();
     error BaseVault__NativeTransferFailed();
+    error BaseVault__NotInEmergencyMode();
+    error BaseVault__NotWhitelisted(address user);
     error BaseVault__OnlyFactory();
     error BaseVault__OnlyWNative();
     error BaseVault__OnlyStrategy();
     error BaseVault__SameStrategy();
+    error BaseVault__SameWhitelistState();
     error BaseVault__ZeroAmount();
     error BaseVault__ZeroShares();
 
@@ -62,6 +65,12 @@ interface IBaseVault is IERC20Upgradeable {
     event DepositFeeSet(uint256 fee);
 
     event WithdrawalFeeSet(uint256 fee);
+
+    event WhitelistStateChanged(bool state);
+
+    event WhitelistAdded(address[] addresses);
+
+    event WhitelistRemoved(address[] addresses);
 
     event DepositsPaused();
 
@@ -99,6 +108,10 @@ interface IBaseVault is IERC20Upgradeable {
     function previewAmounts(uint256 shares) external view returns (uint256 amountX, uint256 amountY);
 
     function isDepositsPaused() external view returns (bool);
+
+    function isWhitelistedOnly() external view returns (bool);
+
+    function isWhitelisted(address user) external view returns (bool);
 
     function getCurrentRound() external view returns (uint256 round);
 
@@ -141,6 +154,12 @@ interface IBaseVault is IERC20Upgradeable {
     function initialize(string memory name, string memory symbol) external;
 
     function setStrategy(IStrategy newStrategy) external;
+
+    function setWhitelistState(bool state) external;
+
+    function addToWhitelist(address[] calldata addresses) external;
+
+    function removeFromWhitelist(address[] calldata addresses) external;
 
     function pauseDeposits() external;
 
