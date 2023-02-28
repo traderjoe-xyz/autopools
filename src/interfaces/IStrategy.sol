@@ -36,8 +36,6 @@ interface IStrategy {
 
     event OperatorSet(address operator);
 
-    event StrategistFeeSet(uint256 fee);
-
     event AumFeeCollected(
         address indexed sender, uint256 totalBalanceX, uint256 totalBalanceY, uint256 feeX, uint256 feeY
     );
@@ -69,6 +67,8 @@ interface IStrategy {
     function getOperator() external view returns (address);
 
     function getBalances() external view returns (uint256 amountX, uint256 amountY);
+
+    function getIdleBalances() external view returns (uint256 amountX, uint256 amountY);
 
     function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
 
