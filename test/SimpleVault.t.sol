@@ -72,10 +72,10 @@ contract SimpleVaultTest is TestHelper {
         deal(wavax, strategy, 4e18);
         deal(usdc, strategy, 80e6);
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 40e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
 
-        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, amountsInY, 1e18, 1e18);
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, desiredL, 1e18, 1e18);
         vm.stopPrank();
 
         assertEq(ISimpleVault(vault).getAumAnnualFee(), 0.1e4, "test_GetAumAnnualFee::2");
@@ -735,6 +735,62 @@ contract SimpleVaultTest is TestHelper {
 
         assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 1e18 - 2, "test_EmergencyWithdraw::7");
         assertEq(IERC20Upgradeable(usdc).balanceOf(vault), 2, "test_EmergencyWithdraw::8");
+    }
+
+    function test_revert_DepositNotWhitelisted() external {
+        linkVaultToStrategy(vault, strategy);
+
+        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::1");
+
+        vm.startPrank(owner);
+        vm.expectRevert(IBaseVault.BaseVault__SameWhitelistState.selector);
+        factory.setWhitelistState(IBaseVault(vault), false);
+
+        factory.setWhitelistState(IBaseVault(vault), true);
+
+        vm.expectRevert(IBaseVault.BaseVault__SameWhitelistState.selector);
+        factory.setWhitelistState(IBaseVault(vault), true);
+        vm.stopPrank();
+
+        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::2");
+
+        vm.expectRevert(abi.encodeWithSelector(IBaseVault.BaseVault__NotWhitelisted.selector, alice));
+        this.depositToVault(vault, alice, 1e18, 1e18);
+
+        vm.prank(owner);
+        factory.setWhitelistState(IBaseVault(vault), false);
+
+        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::3");
+
+        this.depositToVault(vault, alice, 1e18, 1e18);
+
+        vm.startPrank(owner);
+        factory.setWhitelistState(IBaseVault(vault), true);
+
+        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::4");
+        assertFalse(IBaseVault(vault).isWhitelisted(alice), "test_DepositNotWhitelisted::5");
+
+        address[] memory users = new address[](1);
+        users[0] = alice;
+
+        factory.addToWhitelist(IBaseVault(vault), users);
+
+        vm.expectRevert(abi.encodeWithSelector(IBaseVault.BaseVault__AlreadyWhitelisted.selector, alice));
+        factory.addToWhitelist(IBaseVault(vault), users);
+        vm.stopPrank();
+
+        assertTrue(IBaseVault(vault).isWhitelisted(alice), "test_DepositNotWhitelisted::6");
+
+        this.depositToVault(vault, alice, 1e18, 1e18);
+
+        vm.expectRevert(abi.encodeWithSelector(IBaseVault.BaseVault__NotWhitelisted.selector, bob));
+        this.depositToVault(vault, bob, 1e18, 1e18);
+
+        vm.prank(owner);
+        factory.removeFromWhitelist(IBaseVault(vault), users);
+
+        vm.expectRevert(abi.encodeWithSelector(IBaseVault.BaseVault__NotWhitelisted.selector, alice));
+        this.depositToVault(vault, alice, 1e18, 1e18);
     }
 }
 

@@ -102,6 +102,12 @@ interface IVaultFactory {
 
     function linkVaultToStrategy(IBaseVault vault, address strategy) external;
 
+    function setWhitelistState(IBaseVault vault, bool state) external;
+
+    function addToWhitelist(IBaseVault vault, address[] calldata addresses) external;
+
+    function removeFromWhitelist(IBaseVault vault, address[] calldata addresses) external;
+
     function pauseDeposits(IBaseVault vault) external;
 
     function resumeDeposits(IBaseVault vault) external;

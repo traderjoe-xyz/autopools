@@ -25,7 +25,6 @@ contract DeployFactory is Script {
     }
 
     function run() public returns (Contracts memory contracts) {
-        // vm.createSelectFork(stdChains["avalanche"].rpcUrl, 26_179_802);
         vm.createSelectFork(vm.rpcUrl("fuji"));
 
         uint256 deployerPrivateKey = vm.envUint("DEPLOY_PRIVATE_KEY");

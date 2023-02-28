@@ -19,20 +19,12 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositToVault() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e6);
-
         (uint256 shares, uint256 x, uint256 y) = IOracleVault(vault).previewShares(1e18, 1e6);
 
         assertEq(x, 1e18, "test_DepositToVault::1");
         assertEq(y, 1e6, "test_DepositToVault::2");
 
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(x, y);
-        vm.stopPrank();
+        depositToVault(vault, alice, 1e18, 1e6);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(strategy), 1e18, "test_DepositToVault::3");
         assertEq(IERC20Upgradeable(usdc).balanceOf(strategy), 1e6, "test_DepositToVault::4");
@@ -42,30 +34,14 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositToVaultTwice() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e6);
-
-        deal(wavax, bob, 1e18);
-        deal(usdc, bob, 1e6);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(1e18, 1e6);
-        vm.stopPrank();
+        depositToVault(vault, alice, 1e18, 1e6);
 
         (uint256 shares, uint256 x, uint256 y) = IOracleVault(vault).previewShares(1e18, 1e6);
 
         assertEq(x, 1e18, "test_DepositToVaultTwice::1");
         assertEq(y, 1e6, "test_DepositToVaultTwice::2");
 
-        vm.startPrank(bob);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(1e18, 1e6);
-        vm.stopPrank();
+        depositToVault(vault, bob, 1e18, 1e6);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(strategy), 2e18, "test_DepositToVaultTwice::3");
         assertEq(IERC20Upgradeable(usdc).balanceOf(strategy), 2e6, "test_DepositToVaultTwice::4");
@@ -113,18 +89,21 @@ contract VaultAndStrategyTest is TestHelper {
         assertEq(IOracleVault(vault).balanceOf(alice), 0, "test_WithdrawFromVault::7");
     }
 
-    function test_WithdrawFromVaultAfterdepositWithDistributions() external {
-        depositToVault(vault, alice, 1e18, 20e6);
+    function test_WithdrawFromVaultAfterDepositWithDistributions() external {
+        uint256 amountX = 15e18;
+        uint256 amountY = 100e6;
+
+        depositToVault(vault, alice, amountX, amountY);
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (20e6, 100e6, 20e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 100e6, 20e6);
 
         vm.prank(owner);
 
-        IStrategy(strategy).rebalance(0, 2, 0, type(uint24).max, amountsInY, 1e18, 1e18);
+        IStrategy(strategy).rebalance(0, 2, 0, type(uint24).max, desiredL, 1e18, 1e18);
 
         vm.prank(alice);
         IBaseVault(vault).queueWithdrawal(shares, alice);
@@ -136,7 +115,7 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
 
-        uint256 depositInY = ((price * 1e18) >> 128) + 20e6;
+        uint256 depositInY = ((price * amountX) >> 128) + amountY;
         uint256 receivedInY =
             ((price * IERC20Upgradeable(wavax).balanceOf(alice)) >> 128) + IERC20Upgradeable(usdc).balanceOf(alice);
 
@@ -144,23 +123,15 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositAndWithdrawWithFees() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e6);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(1e18, 1e6);
-        vm.stopPrank();
+        depositToVault(vault, alice, 1e24, 1e18);
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (100e6, 20e6, 200e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 20e6, 200e6);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(1, 3, 2, type(uint24).max, amountsInY, 1e18, 1e18);
+        IStrategy(strategy).rebalance(1, 3, 2, type(uint24).max, desiredL, 1e18, 1e18);
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
@@ -203,24 +174,16 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositAndWithdrawNoActive() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e6);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(1e18, 1e6);
-        vm.stopPrank();
+        depositToVault(vault, alice, 1e24, 1e18);
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (50e6, 200e6, 1000e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (50e6, 200e6, 1000e6);
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
@@ -238,25 +201,17 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositAndCollectFees() external {
-        deal(wavax, alice, 1e18);
-        deal(usdc, alice, 1e6);
-
-        vm.startPrank(alice);
-        IERC20Upgradeable(wavax).approve(vault, 1e18);
-        IERC20Upgradeable(usdc).approve(vault, 1e6);
-
-        IOracleVault(vault).deposit(1e18, 1e6);
-        vm.stopPrank();
+        depositToVault(vault, alice, 20e18, 200e6);
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](5);
-        (amountsInY[0], amountsInY[1], amountsInY[2], amountsInY[3], amountsInY[4]) = (100e6, 20e6, 200e6, 100e6, 100e6);
+        uint256[] memory desiredL = new uint256[](5);
+        (desiredL[0], desiredL[1], desiredL[2], desiredL[3], desiredL[4]) = (100e6, 20e6, 200e6, 100e6, 100e6);
 
         vm.startPrank(owner);
         factory.setPendingAumAnnualFee(IBaseVault(vault), 0.1e4);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
         vm.stopPrank();
 
@@ -295,12 +250,12 @@ contract VaultAndStrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (100e6, 200e6, 100e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
@@ -331,12 +286,12 @@ contract VaultAndStrategyTest is TestHelper {
 
         (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
 
-        uint256[] memory amountsInY = new uint256[](3);
-        (amountsInY[0], amountsInY[1], amountsInY[2]) = (100e6, 200e6, 100e6);
+        uint256[] memory desiredL = new uint256[](3);
+        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, amountsInY, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
         );
 
         (uint256 amountX, uint256 amountY) = IBaseVault(vault).previewAmounts(IOracleVault(vault).balanceOf(alice));

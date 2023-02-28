@@ -30,27 +30,27 @@ contract DistributionTest is Test {
     function testFuzz_ComputeDistributionX(uint128[] memory amounts, uint256 price) external {
         vm.assume(price > 0);
 
-        uint256[] memory amountsInY;
+        uint256[] memory desiredL;
 
         assembly {
-            amountsInY := amounts
+            desiredL := amounts
         }
 
-        uint256[] memory expectedDistributionX = new uint256[](amountsInY.length);
+        uint256[] memory expectedDistributionX = new uint256[](desiredL.length);
 
         uint256 sum;
-        for (uint256 i; i < amountsInY.length; ++i) {
-            vm.assume(amountsInY[i] <= type(uint128).max && (amountsInY[i] << 128) / price <= type(uint128).max);
+        for (uint256 i; i < desiredL.length; ++i) {
+            vm.assume(desiredL[i] <= type(uint128).max && (desiredL[i] << 128) / price <= type(uint128).max);
 
-            expectedDistributionX[i] = (amountsInY[i] << 128) / price;
+            expectedDistributionX[i] = (desiredL[i] << 128) / price;
             sum += expectedDistributionX[i];
         }
 
-        uint256[] memory distributionX = new uint256[](amountsInY.length);
+        uint256[] memory distributionX = new uint256[](desiredL.length);
 
-        amountsInY.computeDistributionX(distributionX, price, 0, 0, false);
+        desiredL.computeDistributionX(distributionX, price, 0, 0, false);
 
-        for (uint256 i; i < amountsInY.length; ++i) {
+        for (uint256 i; i < desiredL.length; ++i) {
             if (sum != 0) {
                 assertEq(distributionX[i], expectedDistributionX[i] * 1e18 / sum, "test_ComputeDistributionX::1");
             } else {
@@ -60,27 +60,27 @@ contract DistributionTest is Test {
     }
 
     function testFuzz_ComputeDistributionY(uint128[] memory amounts) external {
-        uint256[] memory amountsInY;
+        uint256[] memory desiredL;
 
         assembly {
-            amountsInY := amounts
+            desiredL := amounts
         }
 
-        uint256[] memory expectedDistributionY = new uint256[](amountsInY.length);
+        uint256[] memory expectedDistributionY = new uint256[](desiredL.length);
 
         uint256 sum;
-        for (uint256 i; i < amountsInY.length; ++i) {
-            vm.assume(amountsInY[i] <= type(uint128).max);
+        for (uint256 i; i < desiredL.length; ++i) {
+            vm.assume(desiredL[i] <= type(uint128).max);
 
-            expectedDistributionY[i] = amountsInY[i];
+            expectedDistributionY[i] = desiredL[i];
             sum += expectedDistributionY[i];
         }
 
-        uint256[] memory distributionY = new uint256[](amountsInY.length);
+        uint256[] memory distributionY = new uint256[](desiredL.length);
 
-        amountsInY.computeDistributionY(distributionY, 0, distributionY.length, false);
+        desiredL.computeDistributionY(distributionY, 0, distributionY.length, false);
 
-        for (uint256 i; i < amountsInY.length; ++i) {
+        for (uint256 i; i < desiredL.length; ++i) {
             if (sum != 0) {
                 assertEq(distributionY[i], expectedDistributionY[i] * 1e18 / sum, "test_ComputeDistributionY::1");
             } else {
@@ -121,39 +121,39 @@ contract DistributionTest is Test {
     ) external {
         vm.assume(compositionFactor <= 1 << 128 && index < amounts.length && price > 0);
 
-        uint256[] memory amountsInY;
+        uint256[] memory desiredL;
 
         assembly {
-            amountsInY := amounts
+            desiredL := amounts
         }
 
-        for (uint256 i = 0; i < amountsInY.length; i++) {
-            vm.assume((amountsInY[i] << 128) / price <= type(uint128).max);
+        for (uint256 i = 0; i < desiredL.length; i++) {
+            vm.assume((desiredL[i] << 128) / price <= type(uint128).max);
         }
 
         (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
-            amountsInY.getDistributions(compositionFactor, price, index);
+            desiredL.getDistributions(compositionFactor, price, index);
 
         {
             (uint256 sumDX, uint256 sumDY) = (0, 0);
-            for (uint256 i = 0; i < amountsInY.length; i++) {
+            for (uint256 i = 0; i < desiredL.length; i++) {
                 uint256 x = amountX * distributionX[i] / 1e18;
                 uint256 y = amountY * distributionY[i] / 1e18;
 
                 sumDX += distributionX[i];
                 sumDY += distributionY[i];
 
-                assertLe((x * price >> 128) + y, amountsInY[i], "testFuzz_GetDistributions::1");
+                assertLe((x * price >> 128) + y, desiredL[i], "testFuzz_GetDistributions::1");
             }
 
             assertLe(sumDX, 1e18, "testFuzz_GetDistributions::2");
             assertLe(sumDY, 1e18, "testFuzz_GetDistributions::3");
         }
 
-        uint256[] memory expectedDX = new uint256[](amountsInY.length);
-        uint256[] memory expectedDY = new uint256[](amountsInY.length);
+        uint256[] memory expectedDX = new uint256[](desiredL.length);
+        uint256[] memory expectedDY = new uint256[](desiredL.length);
 
-        uint256 activeAmount = amountsInY[index];
+        uint256 activeAmount = desiredL[index];
 
         uint256 sumY = (activeAmount * compositionFactor) >> 128;
         uint256 sumX = ((activeAmount - sumY) << 128) / price;
@@ -161,17 +161,17 @@ contract DistributionTest is Test {
         expectedDY[index] = sumY;
         expectedDX[index] = sumX;
 
-        for (uint256 i = 0; i < amountsInY.length; i++) {
+        for (uint256 i = 0; i < desiredL.length; i++) {
             if (i < index) {
-                expectedDY[i] = amountsInY[i];
+                expectedDY[i] = desiredL[i];
                 sumY += expectedDY[i];
             } else if (i > index) {
-                expectedDX[i] = (uint256(amountsInY[i]) << 128) / price;
+                expectedDX[i] = (uint256(desiredL[i]) << 128) / price;
                 sumX += expectedDX[i];
             }
         }
 
-        for (uint256 i = 0; i < amountsInY.length; i++) {
+        for (uint256 i = 0; i < desiredL.length; i++) {
             if (sumX > 0) expectedDX[i] = expectedDX[i] * 1e18 / sumX;
             if (sumY > 0) expectedDY[i] = expectedDY[i] * 1e18 / sumY;
 

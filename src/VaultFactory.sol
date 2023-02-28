@@ -318,6 +318,33 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     }
 
     /**
+     * @notice Sets the whitelist state of the given vault.
+     * @param vault The address of the vault.
+     * @param isWhitelisted The whitelist state.
+     */
+    function setWhitelistState(IBaseVault vault, bool isWhitelisted) external override onlyOwner {
+        vault.setWhitelistState(isWhitelisted);
+    }
+
+    /**
+     * @notice Adds addresses to the whitelist of the given vault.
+     * @param vault The address of the vault.
+     * @param addresses The addresses to add.
+     */
+    function addToWhitelist(IBaseVault vault, address[] calldata addresses) external override onlyOwner {
+        vault.addToWhitelist(addresses);
+    }
+
+    /**
+     * @notice Removes addresses from the whitelist of the given vault.
+     * @param vault The address of the vault.
+     * @param addresses The addresses to remove.
+     */
+    function removeFromWhitelist(IBaseVault vault, address[] calldata addresses) external override onlyOwner {
+        vault.removeFromWhitelist(addresses);
+    }
+
+    /**
      * @notice Pauses the deposits of the given vault.
      * @param vault The address of the vault.
      */
