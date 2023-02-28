@@ -32,6 +32,29 @@ contract StrategyTest is TestHelper {
         assertEq(upper, 0, "test_GetRange::2");
     }
 
+    function test_GetIdleBalances() external {
+        (uint256 x, uint256 y) = IStrategy(strategy).getIdleBalances();
+
+        assertEq(x, 0, "test_GetIdleBalances::1");
+        assertEq(y, 0, "test_GetIdleBalances::2");
+
+        deal(wavax, strategy, 1e18);
+        deal(usdc, strategy, 1e6);
+
+        (x, y) = IStrategy(strategy).getIdleBalances();
+
+        assertEq(x, 1e18, "test_GetIdleBalances::3");
+        assertEq(y, 1e6, "test_GetIdleBalances::4");
+
+        vm.prank(owner);
+        factory.setEmergencyMode(IBaseVault(vault));
+
+        (x, y) = IStrategy(strategy).getIdleBalances();
+
+        assertEq(x, 0, "test_GetIdleBalances::5");
+        assertEq(y, 0, "test_GetIdleBalances::6");
+    }
+
     function test_GetOperator() external {
         assertEq(address(IStrategy(strategy).getOperator()), address(0), "test_GetOperator::1");
 

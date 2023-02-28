@@ -68,6 +68,8 @@ interface IStrategy {
 
     function getBalances() external view returns (uint256 amountX, uint256 amountY);
 
+    function getIdleBalances() external view returns (uint256 amountX, uint256 amountY);
+
     function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
 
     function initialize() external;

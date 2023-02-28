@@ -177,6 +177,16 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
+     * @notice Returns the idle balances of the strategy.
+     * @return amountX The idle amount of token X.
+     * @return amountY The idle amount of token Y.
+     */
+    function getIdleBalances() external view override returns (uint256 amountX, uint256 amountY) {
+        amountX = _tokenX().balanceOf(address(this));
+        amountY = _tokenY().balanceOf(address(this));
+    }
+
+    /**
      * @notice Returns the pending fees of the strategy.
      * @return amountX The amount of token X.
      * @return amountY The amount of token Y.
