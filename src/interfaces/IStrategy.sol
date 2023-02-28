@@ -36,8 +36,6 @@ interface IStrategy {
 
     event OperatorSet(address operator);
 
-    event StrategistFeeSet(uint256 fee);
-
     event AumFeeCollected(
         address indexed sender, uint256 totalBalanceX, uint256 totalBalanceY, uint256 feeX, uint256 feeY
     );
