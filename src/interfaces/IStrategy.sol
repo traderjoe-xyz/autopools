@@ -5,6 +5,7 @@ pragma solidity 0.8.10;
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 
+import {IOneInchRouter} from "./IOneInchRouter.sol";
 import {IVaultFactory} from "./IVaultFactory.sol";
 
 /**
@@ -18,16 +19,11 @@ interface IStrategy {
     error Strategy__OnlyOperators();
     error Strategy__InvalidDistribution();
     error Strategy__ZeroAmounts();
-    error Strategy__SwapFailed();
-    error Strategy__InvalidData();
-    error Strategy__InvalidDstToken();
+    error Strategy__InvalidAmount();
+    error Strategy__InvalidToken();
     error Strategy__InvalidReceiver();
-    error Strategy__InvalidPrice();
     error Strategy__InvalidRange();
-    error Strategy__InvalidRemovedRange();
-    error Strategy__InvalidAddedRange();
     error Strategy__InvalidFee();
-    error Strategy__ActiveIdSlippageExceeded();
     error Strategy__ActiveIdSlippage();
     error Strategy__RangeAlreadySet();
     error Strategy__RangeTooWide();
@@ -90,7 +86,7 @@ interface IStrategy {
 
     function collectFees() external;
 
-    function swap(bytes memory data) external;
+    function swap(address executor, IOneInchRouter.SwapDescription memory desc, bytes memory data) external;
 
     function setOperator(address operator) external;
 

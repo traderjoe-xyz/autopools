@@ -19,6 +19,7 @@ import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
 import {CloneExtension} from "./libraries/CloneExtension.sol";
 import {Math} from "./libraries/Math.sol";
 import {Distribution} from "./libraries/Distribution.sol";
+import {IOneInchRouter} from "./interfaces/IOneInchRouter.sol";
 
 /**
  * @title Liquidity Book Simple SimpleStrategy contract
@@ -41,7 +42,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     using SafeCast for uint256;
     using Math512Bits for uint256;
 
-    address private constant _ONE_INCH_ROUTER = 0x1111111254EEB25477B68fb85Ed929f73A960582;
+    IOneInchRouter private constant _ONE_INCH_ROUTER = IOneInchRouter(0x1111111254EEB25477B68fb85Ed929f73A960582);
 
     uint256 private constant _PRECISION = 1e18;
     uint256 private constant _BASIS_POINTS = 1e4;
@@ -105,9 +106,6 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
      */
     function initialize() external initializer {
         __ReentrancyGuard_init();
-
-        IERC20Upgradeable(_tokenX()).approve(_ONE_INCH_ROUTER, type(uint256).max);
-        IERC20Upgradeable(_tokenY()).approve(_ONE_INCH_ROUTER, type(uint256).max);
     }
 
     /**
@@ -304,29 +302,30 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     /**
      * @notice Swaps tokens using 1inch.
      * @dev Only the operator can call this function.
-     * @param data The data to call the 1inch router with.
+     * @param executor The address that will execute the swap.
+     * @param desc The swap description.
+     * @param data The data to be passed to the 1inch router.
      */
-    function swap(bytes memory data) external override onlyOperators {
-        // The data must be at least 0xc4 bytes long.
-        if (data.length < 0xc4) revert Strategy__InvalidData();
+    function swap(address executor, IOneInchRouter.SwapDescription calldata desc, bytes calldata data)
+        external
+        override
+        onlyOperators
+    {
+        IERC20Upgradeable tokenX = _tokenX();
+        IERC20Upgradeable tokenY = _tokenY();
 
-        address dstToken;
-        address dstReceiver;
-
-        // Get the dst token and the dst receiver from the data.
-        // The src token is checked by the approval.
-        assembly {
-            dstToken := mload(add(data, 0x64))
-            dstReceiver := mload(add(data, 0xa4))
+        if (
+            (desc.srcToken != tokenX || desc.dstToken != tokenY) && (desc.srcToken != tokenY || desc.dstToken != tokenX)
+        ) {
+            revert Strategy__InvalidToken();
         }
 
-        // Check that the dst token is one of the tokens of the strategy and the dst receiver is the strategy.
-        if (dstToken != address(_tokenX()) && dstToken != address(_tokenY())) revert Strategy__InvalidDstToken();
-        if (dstReceiver != address(this)) revert Strategy__InvalidReceiver();
+        if (desc.dstReceiver != address(this)) revert Strategy__InvalidReceiver();
+        if (desc.amount == 0 || desc.minReturnAmount == 0) revert Strategy__InvalidAmount();
 
-        // Call the 1inch router and check the success.
-        (bool success,) = _ONE_INCH_ROUTER.call(data);
-        if (!success) revert Strategy__SwapFailed();
+        desc.srcToken.approve(address(_ONE_INCH_ROUTER), desc.amount);
+        _ONE_INCH_ROUTER.swap(executor, desc, "", data);
+        desc.srcToken.approve(address(_ONE_INCH_ROUTER), 0);
     }
 
     /**
