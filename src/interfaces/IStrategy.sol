@@ -62,6 +62,8 @@ interface IStrategy {
 
     function getAumAnnualFee() external view returns (uint256 aumAnnualFee);
 
+    function getLastRebalance() external view returns (uint256 lastRebalance);
+
     function getPendingAumAnnualFee() external view returns (bool isSet, uint256 pendingAumAnnualFee);
 
     function getOperator() external view returns (address);

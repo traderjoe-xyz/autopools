@@ -206,6 +206,14 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
+     * @notice Returns the last rebalance timestamp.
+     * @return lastRebalance The last rebalance timestamp.
+     */
+    function getLastRebalance() external view override returns (uint256 lastRebalance) {
+        return _lastRebalance;
+    }
+
+    /**
      * @notice Returns the pending assets under management annual fee.
      * @return isSet True if the pending assets under management annual fee is set.
      * @return pendingAumAnnualFee The pending assets under management annual fee.
