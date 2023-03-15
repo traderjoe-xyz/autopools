@@ -2,8 +2,6 @@
 
 pragma solidity 0.8.10;
 
-import {console} from "forge-std/console.sol";
-
 /**
  * @title The Distribution library
  * @author Trader Joe
