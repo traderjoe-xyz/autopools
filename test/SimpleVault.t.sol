@@ -624,9 +624,6 @@ contract SimpleVaultTest is TestHelper {
     }
 
     function test_revert_RedeemQueuedWithdrawal() external {
-        vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
-        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
-
         linkVaultToStrategy(vault, strategy);
         depositToVault(vault, alice, 1e18, 1e18);
 
@@ -635,8 +632,14 @@ contract SimpleVaultTest is TestHelper {
         vm.prank(alice);
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
-        vm.expectRevert();
+        vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
         IBaseVault(vault).redeemQueuedWithdrawal(1, alice);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, bob);
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidRecipient.selector);
         IBaseVault(vault).redeemQueuedWithdrawal(0, address(0));
