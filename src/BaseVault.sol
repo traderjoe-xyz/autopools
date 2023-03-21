@@ -946,6 +946,10 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @return amountY The amount of token Y to be withdrawn.
      */
     function _redeemWithdrawal(uint256 round, address user) internal returns (uint256 amountX, uint256 amountY) {
+        // Prevent redeeming withdrawals for the current round that have not been executed yet
+        uint256 currentRound = _queuedWithdrawalsByRound.length - 1;
+        if (round >= currentRound) revert BaseVault__InvalidRound();
+
         QueuedWithdrawal storage queuedWithdrawals = _queuedWithdrawalsByRound[round];
 
         // Get the amount of shares to redeem, will revert if the user has no queued withdrawal

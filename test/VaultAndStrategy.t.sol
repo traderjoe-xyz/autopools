@@ -305,4 +305,45 @@ contract VaultAndStrategyTest is TestHelper {
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), amountX, "test_DepositAndEmergencyWithdraw::1");
         assertEq(IERC20Upgradeable(usdc).balanceOf(alice), amountY, "test_DepositAndEmergencyWithdraw::2");
     }
+
+    function test_DepositRedeemBeforeEndOfRound() external {
+        depositToVault(vault, alice, 1e18, 20e6);
+
+        uint256 shares = IOracleVault(vault).balanceOf(alice);
+
+        (uint256 x, uint256 y) = IOracleVault(vault).previewAmounts(shares);
+
+        assertEq(x, 1e18 * shares / (shares + 1e6), "test_WithdrawFromVault::1");
+        assertEq(y, 20e6 * shares / (shares + 1e6), "test_WithdrawFromVault::2");
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
+        IOracleVault(vault).redeemQueuedWithdrawal(1, alice);
+
+        vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
+        IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        vm.prank(alice);
+        IBaseVault(vault).queueWithdrawal(shares, alice);
+
+        vm.prank(owner);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+
+        IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        assertEq(IERC20Upgradeable(wavax).balanceOf(alice), x, "test_WithdrawFromVault::3");
+        assertEq(IERC20Upgradeable(usdc).balanceOf(alice), y, "test_WithdrawFromVault::4");
+
+        assertEq(
+            IERC20Upgradeable(wavax).balanceOf(strategy),
+            (1e18 * 1e6 - 1) / (shares + 1e6) + 1,
+            "test_WithdrawFromVault::5"
+        );
+        assertEq(
+            IERC20Upgradeable(usdc).balanceOf(strategy),
+            (20e6 * 1e6 - 1) / (shares + 1e6) + 1,
+            "test_WithdrawFromVault::6"
+        );
+
+        assertEq(IOracleVault(vault).balanceOf(alice), 0, "test_WithdrawFromVault::7");
+    }
 }
