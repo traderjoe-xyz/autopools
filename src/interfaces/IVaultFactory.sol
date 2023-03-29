@@ -17,17 +17,21 @@ import {IBaseVault} from "./IBaseVault.sol";
 interface IVaultFactory {
     error VaultFactory__VaultImplementationNotSet(VaultType vType);
     error VaultFactory__StrategyImplementationNotSet(StrategyType sType);
-    error VaultFactory__InvalidVaultType();
-    error VaultFactory__ZeroAddress();
+    error VaultFactory__InvalidType();
     error VaultFactory__InvalidOraclePrice();
     error VaultFactory__InvalidStrategy();
+    error VaultFactory__ProxyAdminCannotBeOwner();
 
     enum VaultType {
+        None,
         Simple,
         Oracle
     }
 
-    enum StrategyType {Default}
+    enum StrategyType {
+        None,
+        Default
+    }
 
     event VaultCreated(
         VaultType indexed vType,
@@ -58,7 +62,11 @@ interface IVaultFactory {
 
     function getVaultAt(VaultType vType, uint256 index) external view returns (address);
 
+    function getVaultType(address vault) external view returns (VaultType);
+
     function getStrategyAt(StrategyType sType, uint256 index) external view returns (address);
+
+    function getStrategyType(address strategy) external view returns (StrategyType);
 
     function getNumberOfVaults(VaultType vType) external view returns (uint256);
 

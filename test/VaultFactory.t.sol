@@ -168,6 +168,7 @@ contract VaultFactoryTest is TestHelper {
 
         assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 0), vault, "test_CreateSimpleVault::4");
         assertEq(factory.getNumberOfVaults(IVaultFactory.VaultType.Simple), 1, "test_CreateSimpleVault::5");
+        assertEq(uint8(factory.getVaultType(vault)), uint8(IVaultFactory.VaultType.Simple), "test_CreateSimpleVault::6");
     }
 
     function test_revert_CreateSimpleVault() public {
@@ -264,6 +265,11 @@ contract VaultFactoryTest is TestHelper {
             factory.getStrategyAt(IVaultFactory.StrategyType.Default, 0), strategy, "test_CreateDefaultStrategy::5"
         );
         assertEq(factory.getNumberOfStrategies(IVaultFactory.StrategyType.Default), 1, "test_CreateDefaultStrategy::6");
+        assertEq(
+            uint8(factory.getStrategyType(strategy)),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateDefaultStrategy::7"
+        );
     }
 
     function test_revert_CreateDefaultStrategy() public {
@@ -279,7 +285,8 @@ contract VaultFactoryTest is TestHelper {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector, IVaultFactory.StrategyType.Default
+                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector,
+                uint8(IVaultFactory.StrategyType.Default)
             )
         );
         factory.createDefaultStrategy(IBaseVault(vault));
@@ -362,6 +369,11 @@ contract VaultFactoryTest is TestHelper {
             1,
             "test_CreateSimpleVaultAndDefaultStrategy::8"
         );
+        assertEq(
+            uint8(factory.getStrategyType(strategy)),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateSimpleVaultAndDefaultStrategy::9"
+        );
     }
 
     function test_revert_CreateSimpleVaultAndDefaultStrategy() public {
@@ -375,7 +387,8 @@ contract VaultFactoryTest is TestHelper {
         factory.setVaultImplementation(IVaultFactory.VaultType.Simple, vaultImplementation);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector, IVaultFactory.StrategyType.Default
+                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector,
+                uint8(IVaultFactory.StrategyType.Default)
             )
         );
         factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
@@ -435,6 +448,11 @@ contract VaultFactoryTest is TestHelper {
             1,
             "test_CreateOracleVaultAndDefaultStrategy::15"
         );
+        assertEq(
+            uint8(factory.getStrategyType(strategy)),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateOracleVaultAndDefaultStrategy::16"
+        );
     }
 
     function test_revert_CreateOracleVaultAndDefaultStrategy() public {
@@ -456,7 +474,8 @@ contract VaultFactoryTest is TestHelper {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector, IVaultFactory.StrategyType.Default
+                IVaultFactory.VaultFactory__StrategyImplementationNotSet.selector,
+                uint8(IVaultFactory.StrategyType.Default)
             )
         );
         factory.createOracleVaultAndDefaultStrategy(ILBPair(address(wavax_usdc_20bp)), dfX, dfY);
@@ -627,30 +646,90 @@ contract VaultFactoryTest is TestHelper {
         assertEq(factory.getNumberOfStrategies(IVaultFactory.StrategyType.Default), 6, "test_CreateMultipleAPT::3");
 
         assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 0), oracleVaults[0], "test_CreateMultipleAPT::4");
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 1), oracleVaults[1], "test_CreateMultipleAPT::5");
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 2), oracleVaults[2], "test_CreateMultipleAPT::6");
+        assertEq(
+            uint8(factory.getVaultType(oracleVaults[0])),
+            uint8(IVaultFactory.VaultType.Oracle),
+            "test_CreateMultipleAPT::5"
+        );
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 1), oracleVaults[1], "test_CreateMultipleAPT::6");
+        assertEq(
+            uint8(factory.getVaultType(oracleVaults[1])),
+            uint8(IVaultFactory.VaultType.Oracle),
+            "test_CreateMultipleAPT::7"
+        );
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 2), oracleVaults[2], "test_CreateMultipleAPT::8");
+        assertEq(
+            uint8(factory.getVaultType(oracleVaults[2])),
+            uint8(IVaultFactory.VaultType.Oracle),
+            "test_CreateMultipleAPT::9"
+        );
 
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 0), simpleVaults[0], "test_CreateMultipleAPT::7");
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 1), simpleVaults[1], "test_CreateMultipleAPT::8");
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 2), simpleVaults[2], "test_CreateMultipleAPT::9");
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 0), simpleVaults[0], "test_CreateMultipleAPT::10");
+        assertEq(
+            uint8(factory.getVaultType(simpleVaults[0])),
+            uint8(IVaultFactory.VaultType.Simple),
+            "test_CreateMultipleAPT::11"
+        );
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 1), simpleVaults[1], "test_CreateMultipleAPT::12");
+        assertEq(
+            uint8(factory.getVaultType(simpleVaults[1])),
+            uint8(IVaultFactory.VaultType.Simple),
+            "test_CreateMultipleAPT::13"
+        );
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 2), simpleVaults[2], "test_CreateMultipleAPT::14");
+        assertEq(
+            uint8(factory.getVaultType(simpleVaults[2])),
+            uint8(IVaultFactory.VaultType.Simple),
+            "test_CreateMultipleAPT::15"
+        );
 
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 0), strategies[0], "test_CreateMultipleAPT::10"
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 0), strategies[0], "test_CreateMultipleAPT::16"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 1), strategies[1], "test_CreateMultipleAPT::11"
+            uint8(factory.getStrategyType(strategies[0])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::17"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 2), strategies[2], "test_CreateMultipleAPT::12"
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 1), strategies[1], "test_CreateMultipleAPT::18"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 3), strategies[3], "test_CreateMultipleAPT::13"
+            uint8(factory.getStrategyType(strategies[1])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::19"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 4), strategies[4], "test_CreateMultipleAPT::14"
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 2), strategies[2], "test_CreateMultipleAPT::20"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 5), strategies[5], "test_CreateMultipleAPT::15"
+            uint8(factory.getStrategyType(strategies[2])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::21"
+        );
+        assertEq(
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 3), strategies[3], "test_CreateMultipleAPT::22"
+        );
+        assertEq(
+            uint8(factory.getStrategyType(strategies[3])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::23"
+        );
+        assertEq(
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 4), strategies[4], "test_CreateMultipleAPT::24"
+        );
+        assertEq(
+            uint8(factory.getStrategyType(strategies[4])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::25"
+        );
+        assertEq(
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 5), strategies[5], "test_CreateMultipleAPT::26"
+        );
+        assertEq(
+            uint8(factory.getStrategyType(strategies[5])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::27"
         );
 
         vm.startPrank(owner);
@@ -660,19 +739,39 @@ contract VaultFactoryTest is TestHelper {
         (simpleVaults[3], strategies[7]) = factory.createSimpleVaultAndDefaultStrategy(ILBPair(wavax_usdc_20bp));
         vm.stopPrank();
 
-        assertEq(factory.getNumberOfVaults(IVaultFactory.VaultType.Oracle), 4, "test_CreateMultipleAPT::16");
-        assertEq(factory.getNumberOfVaults(IVaultFactory.VaultType.Simple), 4, "test_CreateMultipleAPT::17");
+        assertEq(factory.getNumberOfVaults(IVaultFactory.VaultType.Oracle), 4, "test_CreateMultipleAPT::28");
+        assertEq(factory.getNumberOfVaults(IVaultFactory.VaultType.Simple), 4, "test_CreateMultipleAPT::29");
 
-        assertEq(factory.getNumberOfStrategies(IVaultFactory.StrategyType.Default), 8, "test_CreateMultipleAPT::18");
+        assertEq(factory.getNumberOfStrategies(IVaultFactory.StrategyType.Default), 8, "test_CreateMultipleAPT::30");
 
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 3), oracleVaults[3], "test_CreateMultipleAPT::19");
-        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 3), simpleVaults[3], "test_CreateMultipleAPT::20");
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Oracle, 3), oracleVaults[3], "test_CreateMultipleAPT::31");
+        assertEq(
+            uint8(factory.getVaultType(oracleVaults[3])),
+            uint8(IVaultFactory.VaultType.Oracle),
+            "test_CreateMultipleAPT::32"
+        );
+        assertEq(factory.getVaultAt(IVaultFactory.VaultType.Simple, 3), simpleVaults[3], "test_CreateMultipleAPT::33");
+        assertEq(
+            uint8(factory.getVaultType(simpleVaults[3])),
+            uint8(IVaultFactory.VaultType.Simple),
+            "test_CreateMultipleAPT::34"
+        );
 
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 6), strategies[6], "test_CreateMultipleAPT::21"
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 6), strategies[6], "test_CreateMultipleAPT::35"
         );
         assertEq(
-            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 7), strategies[7], "test_CreateMultipleAPT::22"
+            uint8(factory.getStrategyType(strategies[6])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::36"
+        );
+        assertEq(
+            factory.getStrategyAt(IVaultFactory.StrategyType.Default, 7), strategies[7], "test_CreateMultipleAPT::37"
+        );
+        assertEq(
+            uint8(factory.getStrategyType(strategies[7])),
+            uint8(IVaultFactory.StrategyType.Default),
+            "test_CreateMultipleAPT::38"
         );
     }
 

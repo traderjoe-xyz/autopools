@@ -37,13 +37,27 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     mapping(VaultType => address[]) private _vaults;
     mapping(StrategyType => address[]) private _strategies;
 
-    mapping(address => bool) private _isStrategy;
+    // Updated in v2
+    mapping(address => StrategyType) private _strategyType;
 
     mapping(VaultType => address) private _vaultImplementation;
     mapping(StrategyType => address) private _strategyImplementation;
 
     address private _feeRecipient;
     address private _defaultOperator;
+
+    // Added in v2
+    mapping(address => VaultType) private _vaultType;
+
+    /**
+     * @dev Modifier to check if the type is non None.
+     * @param typeId The type id to check.
+     */
+    modifier nonNone(uint8 typeId) {
+        if (typeId == 0) revert VaultFactory__InvalidType();
+
+        _;
+    }
 
     /**
      * @dev Constructor of the contract.
@@ -59,13 +73,54 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @dev Initialize the contract.
      * @param owner The address of the owner of the contract.
      */
-    function initialize(address owner) public initializer {
-        __Ownable2Step_init();
+    function initialize(address owner) public reinitializer(2) {
+        if (owner == msg.sender) revert VaultFactory__ProxyAdminCannotBeOwner();
 
-        if (owner != msg.sender) _transferOwnership(owner);
+        __Ownable2Step_init();
+        _transferOwnership(owner);
 
         _setDefaultOperator(owner);
         _setFeeRecipient(owner);
+
+        // Update the vault types deployed prior to v2
+        uint256 length = _vaults[VaultType.None].length;
+        for (uint256 i = length; i > 0; --i) {
+            address vault = _vaults[VaultType.None][i - 1];
+
+            _vaultType[vault] = VaultType.Simple;
+
+            _vaults[VaultType.Simple].push(vault);
+            _vaults[VaultType.None].pop();
+        }
+
+        length = _vaults[VaultType.Simple].length;
+        for (uint256 i = length; i > 0; --i) {
+            address vault = _vaults[VaultType.Simple][i - 1];
+
+            _vaultType[vault] = VaultType.Oracle;
+
+            _vaults[VaultType.Oracle].push(vault);
+            _vaults[VaultType.Simple].pop();
+        }
+
+        // Update the strategy types deployed prior to v2
+        length = _strategies[StrategyType.None].length;
+        for (uint256 i = length; i > 0; --i) {
+            address strategy = _strategies[StrategyType.None][i - 1];
+
+            _strategyType[strategy] = StrategyType.Default;
+
+            _strategies[StrategyType.Default].push(strategy);
+            _strategies[StrategyType.None].pop();
+        }
+
+        //Update the implementation deployed prior to v2
+        _setVaultImplementation(VaultType.Oracle, _vaultImplementation[VaultType.Simple]);
+        _setVaultImplementation(VaultType.Simple, _vaultImplementation[VaultType.None]);
+        _setVaultImplementation(VaultType.None, address(0));
+
+        _setStrategyImplementation(StrategyType.Default, _strategyImplementation[StrategyType.None]);
+        _setStrategyImplementation(StrategyType.None, address(0));
     }
 
     /**
@@ -87,6 +142,16 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     }
 
     /**
+     * @notice Returns the type of the vault at the given address.
+     * @dev Returns 0 (VaultType.None) if the vault doesn't exist.
+     * @param vault The address of the vault.
+     * @return The type of the vault.
+     */
+    function getVaultType(address vault) external view override returns (VaultType) {
+        return _vaultType[vault];
+    }
+
+    /**
      * @notice Returns the address of the strategy at the given index.
      * @param sType The type of the strategy. (0: DefaultStrategy)
      * @param index The index of the strategy.
@@ -94,6 +159,16 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      */
     function getStrategyAt(StrategyType sType, uint256 index) external view override returns (address) {
         return _strategies[sType][index];
+    }
+
+    /**
+     * @notice Returns the type of the strategy at the given address.
+     * @dev Returns 0 (StrategyType.None) if the strategy doesn't exist.
+     * @param strategy The address of the strategy.
+     * @return The type of the strategy.
+     */
+    function getStrategyType(address strategy) external view override returns (StrategyType) {
+        return _strategyType[strategy];
     }
 
     /**
@@ -154,9 +229,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param vaultImplementation The address of the vault implementation.
      */
     function setVaultImplementation(VaultType vType, address vaultImplementation) external override onlyOwner {
-        _vaultImplementation[vType] = vaultImplementation;
-
-        emit VaultImplementationSet(vType, vaultImplementation);
+        _setVaultImplementation(vType, vaultImplementation);
     }
 
     /**
@@ -169,9 +242,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         override
         onlyOwner
     {
-        _strategyImplementation[sType] = strategyImplementation;
-
-        emit StrategyImplementationSet(sType, strategyImplementation);
+        _setStrategyImplementation(sType, strategyImplementation);
     }
 
     /**
@@ -312,7 +383,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param strategy The address of the strategy.
      */
     function linkVaultToStrategy(IBaseVault vault, address strategy) external override onlyOwner {
-        if (!_isStrategy[strategy]) revert VaultFactory__InvalidStrategy();
+        if (_strategyType[strategy] == StrategyType.None) revert VaultFactory__InvalidStrategy();
 
         _linkVaultToStrategy(vault, strategy);
     }
@@ -381,6 +452,28 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
     {
         vault.recoverERC20(token, recipient, amount);
+    }
+
+    /**
+     * @dev Sets the vault implementation of the given type.
+     * @param vType The type of the vault.
+     * @param vaultImplementation The address of the vault implementation.
+     */
+    function _setVaultImplementation(VaultType vType, address vaultImplementation) internal {
+        _vaultImplementation[vType] = vaultImplementation;
+
+        emit VaultImplementationSet(vType, vaultImplementation);
+    }
+
+    /**
+     * @dev Sets the strategy implementation of the given type.
+     * @param sType The type of the strategy.
+     * @param strategyImplementation The address of the strategy implementation.
+     */
+    function _setStrategyImplementation(StrategyType sType, address strategyImplementation) internal {
+        _strategyImplementation[sType] = strategyImplementation;
+
+        emit StrategyImplementationSet(sType, strategyImplementation);
     }
 
     /**
@@ -454,14 +547,16 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         address tokenX,
         address tokenY,
         bytes memory vaultImmutableData
-    ) private returns (address vault) {
+    ) private nonNone(uint8(vType)) returns (address vault) {
         address vaultImplementation = _vaultImplementation[vType];
         if (vaultImplementation == address(0)) revert VaultFactory__VaultImplementationNotSet(vType);
 
         uint256 vaultId = _vaults[vType].length;
 
         vault = ClonesWithImmutableArgs.clone(vaultImplementation, vaultImmutableData);
+
         _vaults[vType].push(vault);
+        _vaultType[vault] = vType;
 
         IBaseVault(vault).initialize(_getName(vType, vaultId), "APT");
 
@@ -494,6 +589,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      */
     function _createStrategy(StrategyType sType, address vault, ILBPair lbPair, bytes memory strategyImmutableData)
         internal
+        nonNone(uint8(sType))
         returns (address strategy)
     {
         address strategyImplementation = _strategyImplementation[sType];
@@ -504,7 +600,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         strategy = ClonesWithImmutableArgs.clone(strategyImplementation, strategyImmutableData);
 
         _strategies[sType].push(strategy);
-        _isStrategy[strategy] = true;
+        _strategyType[strategy] = sType;
 
         IStrategy(strategy).initialize();
 
@@ -544,5 +640,5 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @dev This is a gap filler to allow us to add new variables in the future without breaking
      *      the storage layout of the contract.
      */
-    uint256[43] private __gap;
+    uint256[42] private __gap;
 }
