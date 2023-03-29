@@ -115,12 +115,23 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         }
 
         //Update the implementation deployed prior to v2
-        _setVaultImplementation(VaultType.Oracle, _vaultImplementation[VaultType.Simple]);
-        _setVaultImplementation(VaultType.Simple, _vaultImplementation[VaultType.None]);
-        _setVaultImplementation(VaultType.None, address(0));
+        address imp;
+        if ((imp = _vaultImplementation[VaultType.Simple]) != address(0)) {
+            _setVaultImplementation(VaultType.Oracle, imp);
+        }
+        if ((imp = _vaultImplementation[VaultType.None]) != address(0)) {
+            _setVaultImplementation(VaultType.Simple, imp);
+        }
+        if (_vaultImplementation[VaultType.None] != address(0)) {
+            _setVaultImplementation(VaultType.None, address(0));
+        }
 
-        _setStrategyImplementation(StrategyType.Default, _strategyImplementation[StrategyType.None]);
-        _setStrategyImplementation(StrategyType.None, address(0));
+        if ((imp = _strategyImplementation[StrategyType.None]) != address(0)) {
+            _setStrategyImplementation(StrategyType.Default, imp);
+        }
+        if (_strategyImplementation[StrategyType.None] != address(0)) {
+            _setStrategyImplementation(StrategyType.None, address(0));
+        }
     }
 
     /**
