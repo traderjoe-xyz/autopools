@@ -50,10 +50,10 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     mapping(address => VaultType) private _vaultType;
 
     /**
-     * @dev Modifier to check if the type is non None.
+     * @dev Modifier to check if the type id is valid.
      * @param typeId The type id to check.
      */
-    modifier nonNone(uint8 typeId) {
+    modifier isValidType(uint8 typeId) {
         if (typeId == 0) revert VaultFactory__InvalidType();
 
         _;
@@ -558,7 +558,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         address tokenX,
         address tokenY,
         bytes memory vaultImmutableData
-    ) private nonNone(uint8(vType)) returns (address vault) {
+    ) private isValidType(uint8(vType)) returns (address vault) {
         address vaultImplementation = _vaultImplementation[vType];
         if (vaultImplementation == address(0)) revert VaultFactory__VaultImplementationNotSet(vType);
 
@@ -600,7 +600,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      */
     function _createStrategy(StrategyType sType, address vault, ILBPair lbPair, bytes memory strategyImmutableData)
         internal
-        nonNone(uint8(sType))
+        isValidType(uint8(sType))
         returns (address strategy)
     {
         address strategyImplementation = _strategyImplementation[sType];
