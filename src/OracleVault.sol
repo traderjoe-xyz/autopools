@@ -83,9 +83,10 @@ contract OracleVault is BaseVault, IOracleVault {
      * @return uintPrice The oracle latest answer.
      */
     function _getOraclePrice(IAggregatorV3 dataFeed) internal view returns (uint256 uintPrice) {
-        (, int256 price,,,) = dataFeed.latestRoundData();
+        (, int256 price,, uint256 updatedAt,) = dataFeed.latestRoundData();
 
-        if (price <= 0 || (uintPrice = uint256(price)) > type(uint128).max) revert OracleVault__InvalidPrice();
+        if (updatedAt == 0 || updatedAt + 24 hours < block.timestamp) revert OracleVault__StalePrice();
+        if (price <= 0 || (uintPrice = uint256(price)) > type(uint96).max) revert OracleVault__InvalidPrice();
     }
 
     /**
