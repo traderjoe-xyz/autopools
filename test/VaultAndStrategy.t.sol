@@ -96,7 +96,7 @@ contract VaultAndStrategyTest is TestHelper {
         depositToVault(vault, alice, amountX, amountY);
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 100e6, 20e6);
@@ -125,7 +125,7 @@ contract VaultAndStrategyTest is TestHelper {
     function test_DepositAndWithdrawWithFees() external {
         depositToVault(vault, alice, 1e24, 1e18);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 20e6, 200e6);
@@ -176,7 +176,7 @@ contract VaultAndStrategyTest is TestHelper {
     function test_DepositAndWithdrawNoActive() external {
         depositToVault(vault, alice, 1e24, 1e18);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (50e6, 200e6, 1000e6);
@@ -200,55 +200,10 @@ contract VaultAndStrategyTest is TestHelper {
         assertGt(IERC20Upgradeable(usdc).balanceOf(alice), 0, "test_DepositAndWithdrawNoActive::2");
     }
 
-    function test_DepositAndCollectFees() external {
-        depositToVault(vault, alice, 20e18, 200e6);
-
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
-
-        uint256[] memory desiredL = new uint256[](5);
-        (desiredL[0], desiredL[1], desiredL[2], desiredL[3], desiredL[4]) = (100e6, 20e6, 200e6, 100e6, 100e6);
-
-        vm.startPrank(owner);
-        factory.setPendingAumAnnualFee(IBaseVault(vault), 0.1e4);
-        IStrategy(strategy).rebalance(
-            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, desiredL, 1e18, 1e18
-        );
-        vm.stopPrank();
-
-        {
-            deal(usdc, bob, 100_000e6);
-            vm.prank(bob);
-            IERC20Upgradeable(usdc).transfer(wavax_usdc_20bp, 100_000e6);
-
-            ILBPair(wavax_usdc_20bp).swap(false, bob);
-
-            deal(wavax, bob, 10_000e18);
-
-            vm.prank(bob);
-            IERC20Upgradeable(wavax).transfer(wavax_usdc_20bp, 10_000e18);
-
-            ILBPair(wavax_usdc_20bp).swap(true, bob);
-
-            deal(usdc, bob, 200_000e6);
-            vm.prank(bob);
-            IERC20Upgradeable(usdc).transfer(wavax_usdc_20bp, 200_000e6);
-
-            ILBPair(wavax_usdc_20bp).swap(false, bob);
-        }
-
-        uint256 balanceX = IERC20Upgradeable(wavax).balanceOf(strategy);
-        uint256 balanceY = IERC20Upgradeable(usdc).balanceOf(strategy);
-
-        IStrategy(strategy).collectFees();
-
-        assertGt(IERC20Upgradeable(wavax).balanceOf(strategy), balanceX, "test_DepositAndCollectFees::1");
-        assertGt(IERC20Upgradeable(usdc).balanceOf(strategy), balanceY, "test_DepositAndCollectFees::2");
-    }
-
     function test_DepositAndSetStrategy() external {
         depositToVault(vault, alice, 25e18, 400e6);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
@@ -284,7 +239,7 @@ contract VaultAndStrategyTest is TestHelper {
     function test_DepositAndEmergencyWithdraw() external {
         depositToVault(vault, alice, 25e18, 400e6);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);

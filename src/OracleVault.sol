@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.10;
 
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 
 import {BaseVault} from "./BaseVault.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
@@ -27,9 +27,9 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * - 0x52: 20 bytes: The address of the oracle of the token Y.
  */
 contract OracleVault is BaseVault, IOracleVault {
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
 
-    uint256 private constant _PRICE_OFFSET = 128;
+    uint8 private constant _PRICE_OFFSET = 128;
 
     /**
      * @dev Constructor of the contract.

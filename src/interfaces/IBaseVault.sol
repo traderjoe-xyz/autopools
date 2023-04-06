@@ -63,10 +63,6 @@ interface IBaseVault is IERC20Upgradeable {
 
     event StrategySet(IStrategy strategy);
 
-    event DepositFeeSet(uint256 fee);
-
-    event WithdrawalFeeSet(uint256 fee);
-
     event WhitelistStateChanged(bool state);
 
     event WhitelistAdded(address[] addresses);
@@ -98,8 +94,6 @@ interface IBaseVault is IERC20Upgradeable {
     function getOperators() external view returns (address defaultOperator, address operator);
 
     function getBalances() external view returns (uint256 amountX, uint256 amountY);
-
-    function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
 
     function previewShares(uint256 amountX, uint256 amountY)
         external

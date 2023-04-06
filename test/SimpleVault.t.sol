@@ -135,21 +135,6 @@ contract SimpleVaultTest is TestHelper {
         assertEq(upper, 0, "test_GetRange::4");
     }
 
-    function test_GetPendingFees() external {
-        (uint256 x, uint256 y) = ISimpleVault(vault).getPendingFees();
-
-        assertEq(x, 0, "test_GetPendingFees::1");
-        assertEq(y, 0, "test_GetPendingFees::2");
-
-        vm.prank(owner);
-        factory.linkVaultToStrategy(IBaseVault(vault), strategy);
-
-        (x, y) = ISimpleVault(vault).getPendingFees();
-
-        assertEq(x, 0, "test_GetPendingFees::3");
-        assertEq(y, 0, "test_GetPendingFees::4");
-    }
-
     function testFuzz_PreviewShares(uint128 x, uint128 y) external {
         (uint256 shares, uint256 effectiveX, uint256 effectiveY) = ISimpleVault(vault).previewShares(x, y);
 

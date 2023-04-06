@@ -2,16 +2,16 @@
 
 pragma solidity 0.8.10;
 
-import {Clone} from "clones-with-immutable-args/Clone.sol";
+import {Clone} from "joe-v2/libraries/Clone.sol";
 import {ERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {Initializable} from "openzeppelin-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import {SafeCast} from "joe-v2/libraries/SafeCast.sol";
+import {SafeCast} from "joe-v2/libraries/math/SafeCast.sol";
 
 import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 import {IBaseVault} from "./interfaces/IBaseVault.sol";
@@ -33,7 +33,7 @@ import {IWNative} from "./interfaces/IWNative.sol";
  */
 abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeable, IBaseVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
     using SafeCast for uint256;
 
     uint8 internal constant _SHARES_DECIMALS = 6;
@@ -222,17 +222,6 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      */
     function getBalances() public view virtual override returns (uint256 amountX, uint256 amountY) {
         (amountX, amountY) = _getBalances(_strategy);
-    }
-
-    /**
-     * @dev Returns the pending fees of the strategy.
-     * @return feesX The pending fees of token X.
-     * @return feesY The pending fees of token Y.
-     */
-    function getPendingFees() public view virtual override returns (uint256 feesX, uint256 feesY) {
-        IStrategy strategy = _strategy;
-
-        return address(strategy) == address(0) ? (0, 0) : strategy.getPendingFees();
     }
 
     /**
@@ -875,8 +864,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @dev Returns the total amount of tokens held in the strategy. This includes the balance, the amounts deposited in
-     * LB and the unclaiemd and redeemed fees.
+     * @dev Returns the total amount of tokens held in the strategy. This includes the balance of the contract and the
+     * amount of tokens deposited in LB.
      * Will return the balance of the vault if no strategy is set.
      * @param strategy The address of the strategy.
      * @return amountX The amount of token X held in the strategy.

@@ -2,21 +2,22 @@
 
 pragma solidity 0.8.10;
 
-import {SafeCast} from "joe-v2/libraries/SafeCast.sol";
-import {BinHelper} from "joe-v2/libraries/BinHelper.sol";
+import {SafeCast} from "joe-v2/libraries/math/SafeCast.sol";
+import {PriceHelper} from "joe-v2/libraries/PriceHelper.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {LiquidityAmounts} from "joe-v2-periphery/periphery/LiquidityAmounts.sol";
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
+import {LiquidityConfigurations} from "joe-v2/libraries/math/LiquidityConfigurations.sol";
+import {Clone} from "joe-v2/libraries/Clone.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IBaseVault} from "./interfaces/IBaseVault.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
-import {CloneExtension} from "./libraries/CloneExtension.sol";
 import {Math} from "./libraries/Math.sol";
 import {Distribution} from "./libraries/Distribution.sol";
 import {IOneInchRouter} from "./interfaces/IOneInchRouter.sol";
@@ -33,14 +34,14 @@ import {IOneInchRouter} from "./interfaces/IOneInchRouter.sol";
  * - 0x3C: 20 bytes: The address of the token Y.
  * - 0x50: 2 bytes: The bin step of the lb pair.
  */
-contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
+contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using LiquidityAmounts for address;
     using Math for uint256;
     using Distribution for uint256[];
-    using BinHelper for uint256;
+    using PriceHelper for uint24;
     using SafeCast for uint256;
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
 
     IOneInchRouter private constant _ONE_INCH_ROUTER = IOneInchRouter(0x1111111254EEB25477B68fb85Ed929f73A960582);
 
@@ -53,8 +54,8 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     uint256 private constant _SCALED_YEAR = 365 days * _BASIS_POINTS;
     uint256 private constant _SCALED_YEAR_SUB_ONE = _SCALED_YEAR - 1;
 
-    uint256 private constant _OFFSET = 128;
-    uint256 private constant _EVEN_COMPOSITION = (1 << (_OFFSET)) / 2; // 50%
+    uint8 private constant _OFFSET = 128;
+    uint256 private constant _EVEN_COMPOSITION = (1 << _OFFSET) / 2; // 50%
 
     IVaultFactory private immutable _factory;
 
@@ -185,17 +186,6 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @notice Returns the pending fees of the strategy.
-     * @return amountX The amount of token X.
-     * @return amountY The amount of token Y.
-     */
-    function getPendingFees() external view override returns (uint256 amountX, uint256 amountY) {
-        (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
-
-        return upper == 0 ? (0, 0) : _getPendingFees(_getIds(lower, upper));
-    }
-
-    /**
      * @notice Returns the assets under management annual fee.
      * @return aumAnnualFee The assets under management annual fee.
      */
@@ -219,15 +209,6 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
      */
     function getPendingAumAnnualFee() external view override returns (bool isSet, uint256 pendingAumAnnualFee) {
         return (_pendingAumAnnualFeeSet, _pendingAumAnnualFee);
-    }
-
-    /**
-     * @notice Collect the fees from the LB pool.
-     */
-    function collectFees() external override {
-        (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
-
-        if (upper > 0) _collectFees(_getIds(lower, upper));
     }
 
     /**
@@ -426,7 +407,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @dev Returns the balances of the contract, including those deposited and the fees not yet collected.
+     * @dev Returns the balances of the contract, including those deposited in the LB pool.
      * @return amountX The balance of token X.
      * @return amountY The balance of token Y.
      */
@@ -438,26 +419,15 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         // Get the range of the tokens in the pool.
         (uint24 lower, uint24 upper) = (_lowerRange, _upperRange);
 
-        // If the range is not empty, get the balances of the tokens in the range and the fees not yet collected.
+        // If the range is not empty, get the balances of the tokens in the range.
         if (upper != 0) {
             uint256[] memory ids = _getIds(lower, upper);
 
             (uint256 depositedX, uint256 depositedY) = address(this).getAmountsOf(ids, address(_pair()));
-            (uint256 feesX, uint256 feesY) = _getPendingFees(ids);
 
-            amountX += depositedX + feesX;
-            amountY += depositedY + feesY;
+            amountX += depositedX;
+            amountY += depositedY;
         }
-    }
-
-    /**
-     * @dev Returns the pending fees of the tokens in the range.
-     * @param ids The ids of the tokens.
-     * @return feesX The pending fees of token X.
-     * @return feesY The pending fees of token Y.
-     */
-    function _getPendingFees(uint256[] memory ids) internal view returns (uint256 feesX, uint256 feesY) {
-        (feesX, feesY) = _pair().pendingFees(address(this), ids);
     }
 
     /**
@@ -465,8 +435,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
      * @return activeId The active id of the pair.
      */
     function _getActiveId() internal view returns (uint24 activeId) {
-        (,, uint256 aId) = _pair().getReservesAndId();
-        return uint24(aId);
+        activeId = _pair().getActiveId();
     }
 
     /**
@@ -543,7 +512,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         if (desiredL.length != newUpper - newLower + 1) revert Strategy__InvalidAmountsLength();
 
         // Get the active bin's price.
-        uint256 price = uint256(activeId).getPriceFromId(_binStep());
+        uint256 price = activeId.getPriceFromId(_binStep());
 
         // If the active id is within the new range, get the distributions and amounts.
         if (newLower <= activeId && activeId <= newUpper) {
@@ -653,18 +622,17 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
         if (amountX > 0) _tokenX().safeTransfer(pair, amountX);
         if (amountY > 0) _tokenY().safeTransfer(pair, amountY);
 
-        // Mint the liquidity tokens.
-        ILBPair(pair).mint(_getIds(lower, upper), distributionX, distributionY, address(this));
-    }
+        bytes32[] memory liquidityConfigs = new bytes32[](delta);
 
-    /**
-     * @dev Collects the fees from the pair.
-     * @param ids The ids of the tokens to collect the fees for.
-     */
-    function _collectFees(uint256[] memory ids) internal {
-        // Collect the fees from the pair only if there are pending fees.
-        (uint256 pendingX, uint256 pendingY) = _getPendingFees(ids);
-        if (pendingX > 0 || pendingY > 0) _pair().collectFees(address(this), ids);
+        for (uint256 i; i < delta; ++i) {
+            uint24 id = lower + uint24(i);
+
+            liquidityConfigs[i] =
+                LiquidityConfigurations.encodeParams(uint64(distributionX[i]), uint64(distributionY[i]), id);
+        }
+
+        // Mint the liquidity tokens.
+        ILBPair(pair).mint(address(this), liquidityConfigs, address(this));
     }
 
     /**
@@ -781,7 +749,7 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @dev Withdraws tokens from the Liquidity Book Pair and claims the fees.
+     * @dev Withdraws tokens from the Liquidity Book Pair.
      * @param removedLower The lower end of the range to remove.
      * @param removedUpper The upper end of the range to remove.
      * @return balanceX The amount of token X in the pair.
@@ -839,16 +807,12 @@ contract Strategy is CloneExtension, ReentrancyGuardUpgradeable, IStrategy {
             }
         }
 
-        // Send the tokens to the pair and claim the fees.
-        ILBToken(pair).safeBatchTransferFrom(address(this), pair, ids, amounts);
-        _collectFees(new uint256[](0));
-
-        // Get the amount of tokens in the strategy and the fees received.
+        // Get the amount of tokens in the strategy.
         balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
         balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
 
         // Burn the tokens from the pair.
-        ILBPair(pair).burn(ids, amounts, address(this));
+        ILBPair(pair).burn(address(this), address(this), ids, amounts);
 
         // Get the amount of tokens withdrawn.
         withdrawnX = IERC20Upgradeable(_tokenX()).balanceOf(address(this)) - balanceX;

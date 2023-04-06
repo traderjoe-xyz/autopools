@@ -4,10 +4,10 @@ pragma solidity 0.8.10;
 
 import "./TestHelper.sol";
 
-import "joe-v2/libraries/Math512Bits.sol";
+import "joe-v2/libraries/math/Uint256x256Math.sol";
 
 contract OracleVaultTest is TestHelper {
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
 
     IAggregatorV3 dfX;
     IAggregatorV3 dfY;
@@ -173,20 +173,6 @@ contract OracleVaultTest is TestHelper {
 
         assertEq(low, 0, "test_GetRange::3");
         assertEq(upper, 0, "test_GetRange::4");
-    }
-
-    function test_GetPendingFees() external {
-        (uint256 x, uint256 y) = IOracleVault(vault).getPendingFees();
-
-        assertEq(x, 0, "test_GetPendingFees::1");
-        assertEq(y, 0, "test_GetPendingFees::2");
-
-        linkVaultToStrategy(vault, strategy);
-
-        (x, y) = IOracleVault(vault).getPendingFees();
-
-        assertEq(x, 0, "test_GetPendingFees::3");
-        assertEq(y, 0, "test_GetPendingFees::4");
     }
 
     function testFuzz_PreviewShares(uint256 priceX, uint256 priceY, uint128 x, uint128 y) external {

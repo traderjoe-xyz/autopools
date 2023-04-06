@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.10;
 
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 
 import {Math} from "./libraries/Math.sol";
 import {BaseVault} from "./BaseVault.sol";
@@ -24,7 +24,7 @@ import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
  * - 0x3D: 1 bytes: The decimals of the token Y.
  */
 contract SimpleVault is BaseVault, ISimpleVault {
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
     using Math for uint256;
 
     /**
