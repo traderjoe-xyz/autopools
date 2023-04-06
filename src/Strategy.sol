@@ -683,14 +683,14 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
                 if (feeX > 0) {
                     // Adjusts the queued amount of token X to account for the fee.
                     queuedAmountX =
-                        queuedAmountX == 0 ? 0 : queuedAmountX + 1 - (feeX * queuedAmountX - 1) / totalBalanceX;
+                        queuedAmountX == 0 ? 0 : queuedAmountX + feeX.mulDivRoundUp(queuedAmountX, totalBalanceX);
 
                     _tokenX().safeTransfer(feeRecipient, feeX);
                 }
                 if (feeY > 0) {
                     // Adjusts the queued amount of token Y to account for the fee.
                     queuedAmountY =
-                        queuedAmountY == 0 ? 0 : queuedAmountY + 1 - (feeY * queuedAmountY - 1) / totalBalanceY;
+                        queuedAmountY == 0 ? 0 : queuedAmountY + feeY.mulDivRoundUp(queuedAmountY, totalBalanceY);
 
                     _tokenY().safeTransfer(feeRecipient, feeY);
                 }
