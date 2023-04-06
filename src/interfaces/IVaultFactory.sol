@@ -20,8 +20,8 @@ interface IVaultFactory {
     error VaultFactory__InvalidType();
     error VaultFactory__InvalidOraclePrice();
     error VaultFactory__InvalidStrategy();
-    error VaultFactory__ProxyAdminCannotBeOwner();
     error VaultFactory__InvalidFeeRecipient();
+    error VaultFactory__InvalidOwner();
 
     enum VaultType {
         None,

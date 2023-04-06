@@ -63,6 +63,9 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     constructor(address wnative) {
         _disableInitializers();
 
+        // safety check
+        IERC20Upgradeable(wnative).balanceOf(address(this));
+
         _wnative = wnative;
     }
 
@@ -71,6 +74,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param owner The address of the owner of the contract.
      */
     function initialize(address owner) public initializer {
+        if (owner == address(0)) revert VaultFactory__InvalidOwner();
+
         __Ownable2Step_init();
         _transferOwnership(owner);
 
