@@ -47,8 +47,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
     QueuedWithdrawal[] private _queuedWithdrawalsByRound;
 
-    uint128 private _totalAmountX;
-    uint128 private _totalAmountY;
+    uint256 private _totalAmountX;
+    uint256 private _totalAmountY;
 
     /**
      * @dev Modifier to check if the caller is the factory.
@@ -618,8 +618,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 receivedY = _tokenY().balanceOf(address(this)) - totalAmountY;
 
         // Update the total amounts of tokens in the vault.
-        _totalAmountX = (totalAmountX + receivedX).safe128();
-        _totalAmountY = (totalAmountY + receivedY).safe128();
+        _totalAmountX = totalAmountX + receivedX;
+        _totalAmountY = totalAmountY + receivedY;
 
         // Update the total amounts of tokens in the queued withdrawals.
         queuedWithdrawals.totalAmountX = uint128(receivedX);
@@ -955,8 +955,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         if (amountX == 0 && amountY == 0) revert BaseVault__ZeroAmount();
 
         // Update the total amount of shares queued for withdrawal
-        if (amountX != 0) _totalAmountX -= amountX.safe128();
-        if (amountY != 0) _totalAmountY -= amountY.safe128();
+        if (amountX != 0) _totalAmountX -= amountX;
+        if (amountY != 0) _totalAmountY -= amountY;
 
         emit WithdrawalRedeemed(msg.sender, user, round, shares, amountX, amountY);
     }
