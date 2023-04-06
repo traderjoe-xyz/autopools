@@ -36,6 +36,7 @@ interface IBaseVault is IERC20Upgradeable {
     error BaseVault__ZeroAmount();
     error BaseVault__ZeroShares();
     error BaseVault__InvalidRound();
+    error BaseVault__Unauthorized();
 
     struct QueuedWithdrawal {
         mapping(address => uint256) userWithdrawals;

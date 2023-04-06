@@ -943,6 +943,9 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 shares = queuedWithdrawals.userWithdrawals[user];
         if (shares == 0) revert BaseVault__NoQueuedWithdrawal();
 
+        // Only the user can redeem their withdrawal. The factory is also allowed as it batches withdrawals for users
+        if (user != msg.sender && msg.sender != address(_factory)) revert BaseVault__Unauthorized();
+
         // Calculate the amount of tokens to be withdrawn, pro rata to the amount of shares
         uint256 totalQueuedShares = queuedWithdrawals.totalQueuedShares;
         queuedWithdrawals.userWithdrawals[user] = 0;

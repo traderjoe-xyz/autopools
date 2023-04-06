@@ -22,6 +22,7 @@ interface IVaultFactory {
     error VaultFactory__InvalidStrategy();
     error VaultFactory__InvalidFeeRecipient();
     error VaultFactory__InvalidOwner();
+    error VaultFactory__InvalidLength();
 
     enum VaultType {
         None,
@@ -80,6 +81,12 @@ interface IVaultFactory {
     function getVaultImplementation(VaultType vType) external view returns (address);
 
     function getStrategyImplementation(StrategyType sType) external view returns (address);
+
+    function batchRedeemQueuedWithdrawals(
+        address[] calldata vaults,
+        uint256[] calldata rounds,
+        bool[] calldata withdrawNative
+    ) external;
 
     function setVaultImplementation(VaultType vType, address vaultImplementation) external;
 

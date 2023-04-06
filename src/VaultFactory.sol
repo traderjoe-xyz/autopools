@@ -183,6 +183,25 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         return _strategyImplementation[sType];
     }
 
+    function batchRedeemQueuedWithdrawals(
+        address[] calldata vaults,
+        uint256[] calldata rounds,
+        bool[] calldata withdrawNative
+    ) external override {
+        if (vaults.length != rounds.length || vaults.length != withdrawNative.length) {
+            revert VaultFactory__InvalidLength();
+        }
+
+        for (uint256 i; i < vaults.length;) {
+            if (withdrawNative[i]) IBaseVault(vaults[i]).redeemQueuedWithdrawalNative(rounds[i], msg.sender);
+            else IBaseVault(vaults[i]).redeemQueuedWithdrawal(rounds[i], msg.sender);
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
     /**
      * @notice Sets the address of the vault implementation of the given type.
      * @param vType The type of the vault. (0: SimpleVault, 1: OracleVault)
