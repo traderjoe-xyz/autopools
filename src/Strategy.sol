@@ -741,7 +741,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         // Get the amount of tokens to withdraw from the queued withdraws.
         (queuedAmountX, queuedAmountY) = totalShares == 0 || queuedShares == 0
             ? (0, 0)
-            : (queuedShares * totalX / totalShares, queuedShares * totalY / totalShares);
+            : (queuedShares.mulDivRoundDown(totalX, totalShares), queuedShares.mulDivRoundDown(totalY, totalShares));
 
         // Get the amount that were not queued for withdrawal.
         amountX = totalX - queuedAmountX;
