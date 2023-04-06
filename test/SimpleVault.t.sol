@@ -539,7 +539,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(IERC20Upgradeable(vault).balanceOf(strategy), shares, "test_QueueWithdrawal::2");
 
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(shares / 2, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(shares / 2);
 
         assertEq(IERC20Upgradeable(vault).balanceOf(alice), shares / 2, "test_QueueWithdrawal::3");
         assertEq(IBaseVault(vault).getQueuedWithdrawal(0, alice), shares - shares / 2, "test_QueueWithdrawal::4");
@@ -581,17 +581,17 @@ contract SimpleVaultTest is TestHelper {
     function test_revert_CancelWithdrawal() external {
         vm.expectRevert(IBaseVault.BaseVault__ZeroShares.selector);
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(0, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(0);
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidStrategy.selector);
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1);
 
         linkVaultToStrategy(vault, strategy);
 
         vm.expectRevert(IBaseVault.BaseVault__MaxSharesExceeded.selector);
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1);
 
         depositToVault(vault, alice, 1e18, 1e18);
 
@@ -601,11 +601,11 @@ contract SimpleVaultTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(shares, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(shares);
 
         vm.expectRevert(IBaseVault.BaseVault__MaxSharesExceeded.selector);
         vm.prank(alice);
-        IBaseVault(vault).cancelQueuedWithdrawal(1, alice);
+        IBaseVault(vault).cancelQueuedWithdrawal(1);
     }
 
     function test_revert_RedeemQueuedWithdrawal() external {
@@ -618,20 +618,28 @@ contract SimpleVaultTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(1, alice);
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
         vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
+        vm.prank(bob);
         IBaseVault(vault).redeemQueuedWithdrawal(0, bob);
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidRecipient.selector);
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(0, address(0));
 
+        vm.expectRevert(IBaseVault.BaseVault__Unauthorized.selector);
+        IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
+
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
 
         vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
     }
 
@@ -716,6 +724,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(IERC20Upgradeable(usdc).balanceOf(alice), 0.5e18 - 1, "test_EmergencyWithdraw::3");
         assertEq(IERC20Upgradeable(usdc).balanceOf(vault), 0.5e18 + 1, "test_EmergencyWithdraw::4");
 
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), 1e18 - 2, "test_EmergencyWithdraw::5");
@@ -728,7 +737,7 @@ contract SimpleVaultTest is TestHelper {
     function test_revert_DepositNotWhitelisted() external {
         linkVaultToStrategy(vault, strategy);
 
-        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::1");
+        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_revert_DepositNotWhitelisted::1");
 
         vm.startPrank(owner);
         vm.expectRevert(IBaseVault.BaseVault__SameWhitelistState.selector);
@@ -740,7 +749,7 @@ contract SimpleVaultTest is TestHelper {
         factory.setWhitelistState(IBaseVault(vault), true);
         vm.stopPrank();
 
-        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::2");
+        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_revert_DepositNotWhitelisted::2");
 
         vm.expectRevert(abi.encodeWithSelector(IBaseVault.BaseVault__NotWhitelisted.selector, alice));
         this.depositToVault(vault, alice, 1e18, 1e18);
@@ -748,15 +757,15 @@ contract SimpleVaultTest is TestHelper {
         vm.prank(owner);
         factory.setWhitelistState(IBaseVault(vault), false);
 
-        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::3");
+        assertFalse(IBaseVault(vault).isWhitelistedOnly(), "test_revert_DepositNotWhitelisted::3");
 
         this.depositToVault(vault, alice, 1e18, 1e18);
 
         vm.startPrank(owner);
         factory.setWhitelistState(IBaseVault(vault), true);
 
-        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_DepositNotWhitelisted::4");
-        assertFalse(IBaseVault(vault).isWhitelisted(alice), "test_DepositNotWhitelisted::5");
+        assertTrue(IBaseVault(vault).isWhitelistedOnly(), "test_revert_DepositNotWhitelisted::4");
+        assertFalse(IBaseVault(vault).isWhitelisted(alice), "test_revert_DepositNotWhitelisted::5");
 
         address[] memory users = new address[](1);
         users[0] = alice;
@@ -767,7 +776,7 @@ contract SimpleVaultTest is TestHelper {
         factory.addToWhitelist(IBaseVault(vault), users);
         vm.stopPrank();
 
-        assertTrue(IBaseVault(vault).isWhitelisted(alice), "test_DepositNotWhitelisted::6");
+        assertTrue(IBaseVault(vault).isWhitelisted(alice), "test_revert_DepositNotWhitelisted::6");
 
         this.depositToVault(vault, alice, 1e18, 1e18);
 

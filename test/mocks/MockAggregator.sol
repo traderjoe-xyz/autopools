@@ -20,13 +20,13 @@ contract MockAggregator is Ownable, IAggregatorV3 {
         return 1;
     }
 
-    function getRoundData(uint80)
+    function getRoundData(uint80 id)
         external
         view
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        return (0, price, 0, 0, 0);
+        return (id, price, block.timestamp, block.timestamp, id);
     }
 
     function latestRoundData()
@@ -35,7 +35,7 @@ contract MockAggregator is Ownable, IAggregatorV3 {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        return (0, price, 0, 0, 0);
+        return (0, price, block.timestamp, block.timestamp, 0);
     }
 
     function setPrice(int256 _price) external onlyOwner {

@@ -152,7 +152,7 @@ contract StrategyTest is TestHelper {
         );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256 balancesInY = ((price * x) >> 128) + y;
         uint256 amountInY = ((price * amountX) >> 128) + amountY;
@@ -385,7 +385,7 @@ contract StrategyTest is TestHelper {
 
         for (uint256 i = 0; i < 3; i++) {
             uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 100 + i);
-            assertApproxEqRel(amount, desiredL[i], 1e14, "test_RebalanceFar::1");
+            assertApproxEqRel(amount, desiredL[i] << 128, 1e14, "test_RebalanceFar::1");
         }
     }
 
@@ -420,7 +420,7 @@ contract StrategyTest is TestHelper {
     function test_revert_MaxAmountExceededX() external {
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256[] memory desiredL = new uint256[](2);
         (desiredL[0], desiredL[1]) = (price * 1e18 >> 128, price * 1e18 >> 128);

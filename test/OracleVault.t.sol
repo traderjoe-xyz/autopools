@@ -175,11 +175,11 @@ contract OracleVaultTest is TestHelper {
         assertEq(upper, 0, "test_GetRange::4");
     }
 
-    function testFuzz_PreviewShares(uint256 priceX, uint256 priceY, uint128 x, uint128 y) external {
-        priceX = bound(priceX, 1, type(uint128).max);
-        priceY = bound(priceY, 1, type(uint128).max);
+    function testFuzz_PreviewSharesNoZero(uint256 priceX, uint256 priceY, uint128 x, uint128 y) external {
+        priceX = bound(priceX, 1, type(uint96).max);
+        priceY = bound(priceY, 1, type(uint96).max);
 
-        vm.assume(priceX * 1e6 / (priceY * 1e18) > 0);
+        vm.assume(((priceX * 1e6) << 128) / (priceY * 1e18) > 0);
 
         MockAggregator(address(dfX)).setPrice(int256(priceX));
         MockAggregator(address(dfY)).setPrice(int256(priceY));
@@ -203,19 +203,16 @@ contract OracleVaultTest is TestHelper {
         assertEq(shares, 0, "test_PreviewSharesWithZeroAmounts::3");
     }
 
-    function testFuzz_revert_PreviewShares(uint256 priceX, uint256 priceY, uint256 x, uint256 y) external {
-        priceX = bound(priceX, 1, type(uint128).max);
-        priceY = bound(priceY, 1, type(uint128).max);
-
-        vm.assume(priceX * 1e6 / (priceY * 1e18) > 0);
-
-        MockAggregator(address(dfX)).setPrice(int256(priceX));
-        MockAggregator(address(dfY)).setPrice(int256(priceY));
+    function testFuzz_revert_PreviewShares(uint256 x, uint256 y) external {
+        MockAggregator(address(dfX)).setPrice(1e8);
+        MockAggregator(address(dfY)).setPrice(1e8);
 
         uint256 price = IOracleVault(vault).getPrice();
 
         x = bound(x, type(uint256).max / (price == 0 ? 1 : price), type(uint256).max);
         y = bound(y, type(uint256).max - type(uint256).max / (price == 0 ? 1 : price) + 1, type(uint256).max);
+
+        console.log(price, x, y);
 
         vm.expectRevert();
         IOracleVault(vault).previewShares(x, y);
@@ -223,17 +220,17 @@ contract OracleVaultTest is TestHelper {
 
     function test_revert_GetPrice() external {
         MockAggregator(address(dfX)).setPrice(1);
-        MockAggregator(address(dfY)).setPrice((1 << 128) + 1);
+        MockAggregator(address(dfY)).setPrice((1 << 96));
 
         vm.expectRevert(IOracleVault.OracleVault__InvalidPrice.selector);
         IOracleVault(vault).getPrice();
     }
 
     function testFuzz_PreviewSharesAfterDeposit(uint256 priceX, uint256 priceY, uint128 x, uint128 y) external {
-        priceX = bound(priceX, 1, type(uint128).max);
-        priceY = bound(priceY, 1, type(uint128).max);
+        priceX = bound(priceX, 1, type(uint96).max);
+        priceY = bound(priceY, 1, type(uint96).max);
 
-        vm.assume(priceX * 1e6 / (priceY * 1e18) > 0);
+        vm.assume(((priceX * 1e6) << 128) / (priceY * 1e18) > 0);
 
         MockAggregator(address(dfX)).setPrice(int256(priceX));
         MockAggregator(address(dfY)).setPrice(int256(priceY));
