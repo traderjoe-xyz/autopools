@@ -952,6 +952,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         amountX = uint256(queuedWithdrawals.totalAmountX) * shares / totalQueuedShares;
         amountY = uint256(queuedWithdrawals.totalAmountY) * shares / totalQueuedShares;
 
+        if (amountX == 0 && amountY == 0) revert BaseVault__ZeroAmount();
+
         // Update the total amount of shares queued for withdrawal
         if (amountX != 0) _totalAmountX -= amountX.safe128();
         if (amountY != 0) _totalAmountY -= amountY.safe128();
