@@ -776,6 +776,16 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
         token.safeTransfer(recipient, amount);
 
+        // Safety check for tokens with double entry points.
+        if (
+            strategy == address(0)
+                && (
+                    _tokenX().balanceOf(address(this)) < _totalAmountX || _tokenY().balanceOf(address(this)) < _totalAmountY
+                )
+        ) {
+            revert BaseVault__InvalidToken();
+        }
+
         emit Recovered(address(token), recipient, amount);
     }
 
