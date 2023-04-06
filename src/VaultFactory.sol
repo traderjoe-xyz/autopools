@@ -580,6 +580,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param feeRecipient The address of the fee recipient.
      */
     function _setFeeRecipient(address feeRecipient) internal {
+        if (feeRecipient == address(0)) revert VaultFactory__InvalidFeeRecipient();
+
         _feeRecipient = feeRecipient;
 
         emit FeeRecipientSet(msg.sender, feeRecipient);
