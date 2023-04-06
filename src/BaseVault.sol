@@ -696,7 +696,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @param addresses The addresses to be added to the whitelist.
      */
     function addToWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             if (_whitelistedUsers[addresses[i]]) revert BaseVault__AlreadyWhitelisted(addresses[i]);
 
             _whitelistedUsers[addresses[i]] = true;
@@ -710,7 +710,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @param addresses The addresses to be removed from the whitelist.
      */
     function removeFromWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             if (!_whitelistedUsers[addresses[i]]) revert BaseVault__NotWhitelisted(addresses[i]);
 
             _whitelistedUsers[addresses[i]] = false;
