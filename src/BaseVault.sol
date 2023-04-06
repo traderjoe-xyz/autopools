@@ -775,6 +775,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         }
 
         token.safeTransfer(recipient, amount);
+
+        emit Recovered(address(token), recipient, amount);
     }
 
     /**

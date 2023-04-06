@@ -70,6 +70,8 @@ interface IBaseVault is IERC20Upgradeable {
 
     event WhitelistRemoved(address[] addresses);
 
+    event Recovered(address token, address recipient, uint256 amount);
+
     event DepositsPaused();
 
     event DepositsResumed();
