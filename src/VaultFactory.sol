@@ -37,7 +37,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     mapping(VaultType => address[]) private _vaults;
     mapping(StrategyType => address[]) private _strategies;
 
-    // Updated in v2
+    mapping(address => VaultType) private _vaultType;
     mapping(address => StrategyType) private _strategyType;
 
     mapping(VaultType => address) private _vaultImplementation;
@@ -45,9 +45,6 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
     address private _feeRecipient;
     address private _defaultOperator;
-
-    // Added in v2
-    mapping(address => VaultType) private _vaultType;
 
     /**
      * @dev Modifier to check if the type id is valid.
@@ -73,65 +70,12 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @dev Initialize the contract.
      * @param owner The address of the owner of the contract.
      */
-    function initialize(address owner) public reinitializer(2) {
-        if (owner == msg.sender) revert VaultFactory__ProxyAdminCannotBeOwner();
-
+    function initialize(address owner) public initializer {
         __Ownable2Step_init();
         _transferOwnership(owner);
 
         _setDefaultOperator(owner);
         _setFeeRecipient(owner);
-
-        // Update the vault types deployed prior to v2
-        uint256 length = _vaults[VaultType.None].length;
-        for (uint256 i = length; i > 0; --i) {
-            address vault = _vaults[VaultType.None][i - 1];
-
-            _vaultType[vault] = VaultType.Simple;
-
-            _vaults[VaultType.Simple].push(vault);
-            _vaults[VaultType.None].pop();
-        }
-
-        length = _vaults[VaultType.Simple].length;
-        for (uint256 i = length; i > 0; --i) {
-            address vault = _vaults[VaultType.Simple][i - 1];
-
-            _vaultType[vault] = VaultType.Oracle;
-
-            _vaults[VaultType.Oracle].push(vault);
-            _vaults[VaultType.Simple].pop();
-        }
-
-        // Update the strategy types deployed prior to v2
-        length = _strategies[StrategyType.None].length;
-        for (uint256 i = length; i > 0; --i) {
-            address strategy = _strategies[StrategyType.None][i - 1];
-
-            _strategyType[strategy] = StrategyType.Default;
-
-            _strategies[StrategyType.Default].push(strategy);
-            _strategies[StrategyType.None].pop();
-        }
-
-        //Update the implementation deployed prior to v2
-        address imp;
-        if ((imp = _vaultImplementation[VaultType.Simple]) != address(0)) {
-            _setVaultImplementation(VaultType.Oracle, imp);
-        }
-        if ((imp = _vaultImplementation[VaultType.None]) != address(0)) {
-            _setVaultImplementation(VaultType.Simple, imp);
-        }
-        if (_vaultImplementation[VaultType.None] != address(0)) {
-            _setVaultImplementation(VaultType.None, address(0));
-        }
-
-        if ((imp = _strategyImplementation[StrategyType.None]) != address(0)) {
-            _setStrategyImplementation(StrategyType.Default, imp);
-        }
-        if (_strategyImplementation[StrategyType.None] != address(0)) {
-            _setStrategyImplementation(StrategyType.None, address(0));
-        }
     }
 
     /**
