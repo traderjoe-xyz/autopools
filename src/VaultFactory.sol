@@ -281,6 +281,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
         returns (address vault, address strategy)
     {
+        if (dataFeedX.decimals() != dataFeedY.decimals()) revert VaultFactory__InvalidDecimals();
+
         address tokenX = address(lbPair.getTokenX());
         address tokenY = address(lbPair.getTokenY());
 

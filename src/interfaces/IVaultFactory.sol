@@ -23,6 +23,7 @@ interface IVaultFactory {
     error VaultFactory__InvalidFeeRecipient();
     error VaultFactory__InvalidOwner();
     error VaultFactory__InvalidLength();
+    error VaultFactory__InvalidDecimals();
 
     enum VaultType {
         None,
