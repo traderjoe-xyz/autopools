@@ -575,8 +575,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 totalShares = totalSupply();
 
         // Calculate the amounts to be withdrawn.
-        uint256 amountX = balanceX * shares / totalShares;
-        uint256 amountY = balanceY * shares / totalShares;
+        uint256 amountX = balanceX.mulDivRoundDown(shares, totalShares);
+        uint256 amountY = balanceY.mulDivRoundDown(shares, totalShares);
 
         // Burn the shares of the user.
         _burn(msg.sender, shares);
