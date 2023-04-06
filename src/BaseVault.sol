@@ -4,16 +4,13 @@ pragma solidity 0.8.10;
 
 import {Clone} from "joe-v2/libraries/Clone.sol";
 import {ERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {Initializable} from "openzeppelin-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
-import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {SafeCast} from "joe-v2/libraries/math/SafeCast.sol";
 
-import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 import {IBaseVault} from "./interfaces/IBaseVault.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
@@ -106,7 +103,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     /**
      * @dev Receive function. Mainly added to silence the compiler warning.
      * Highly unlikely to be used as the base vault needs at least 62 bytes of immutable data added to the payload
-     * (3 addresses and 2 bytes of lenths), so this function should never be called.
+     * (3 addresses and 2 bytes for length), so this function should never be called.
      */
     receive() external payable {
         if (msg.sender != _wnative) revert BaseVault__OnlyWNative();
