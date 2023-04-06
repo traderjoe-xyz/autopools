@@ -336,8 +336,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
         // Calculate the amounts to be redeemed.
         if (totalShares > 0) {
-            amountX = totalAmountX * shares / totalShares;
-            amountY = totalAmountY * shares / totalShares;
+            amountX = totalAmountX.mulDivRoundDown(shares, totalShares);
+            amountY = totalAmountY.mulDivRoundDown(shares, totalShares);
         }
     }
 
@@ -959,8 +959,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 totalQueuedShares = queuedWithdrawals.totalQueuedShares;
         queuedWithdrawals.userWithdrawals[user] = 0;
 
-        amountX = uint256(queuedWithdrawals.totalAmountX) * shares / totalQueuedShares;
-        amountY = uint256(queuedWithdrawals.totalAmountY) * shares / totalQueuedShares;
+        amountX = uint256(queuedWithdrawals.totalAmountX).mulDivRoundDown(shares, totalQueuedShares);
+        amountY = uint256(queuedWithdrawals.totalAmountY).mulDivRoundDown(shares, totalQueuedShares);
 
         if (amountX == 0 && amountY == 0) revert BaseVault__ZeroAmount();
 
