@@ -767,7 +767,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
             uint256 excessStrategy = balanceOf(strategy) - getCurrentTotalQueuedWithdrawal();
 
             // If the token is the vault's token, the remaining amount must be greater than the minimum shares.
-            if (token == this && balanceOf(address(this)) + excessStrategy < amount + _SHARES_PRECISION) {
+            if (balanceOf(address(this)) + excessStrategy < amount + _SHARES_PRECISION) {
                 revert BaseVault__BurnMinShares();
             }
 
