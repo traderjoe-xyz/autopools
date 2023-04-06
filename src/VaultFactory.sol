@@ -441,7 +441,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         string memory vName;
 
         if (vType == VaultType.Simple) vName = "Simple";
-        else vName = "Oracle";
+        else if (vType == VaultType.Oracle) vName = "Oracle";
+        else revert VaultFactory__InvalidType();
 
         return string(abi.encodePacked("Automated Pool Token - ", vName, " Vault #", vaultId.toString()));
     }
