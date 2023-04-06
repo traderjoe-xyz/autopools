@@ -464,19 +464,17 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @notice Cancels a queued withdrawal of `shares` for `recipient`. Cancelling a withdrawal is
+     * @notice Cancels a queued withdrawal of `shares`. Cancelling a withdrawal is
      * only possible before the next rebalance. The user can cancel the withdrawal if they want to
      * stay in the vault. They will receive the vault shares back.
      * @param shares The shares to be cancelled for withdrawal.
-     * @param recipient The address that will receive the withdrawn tokens after the rebalance.
      * @return round The round of the withdrawal that was cancelled.
      */
-    function cancelQueuedWithdrawal(uint256 shares, address recipient)
+    function cancelQueuedWithdrawal(uint256 shares)
         public
         virtual
         override
         nonReentrant
-        onlyValidRecipient(recipient)
         NonZeroShares(shares)
         returns (uint256 round)
     {

@@ -132,7 +132,7 @@ interface IBaseVault is IERC20Upgradeable {
 
     function queueWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
 
-    function cancelQueuedWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
+    function cancelQueuedWithdrawal(uint256 shares) external returns (uint256 round);
 
     function redeemQueuedWithdrawal(uint256 round, address recipient)
         external
