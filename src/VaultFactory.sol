@@ -22,9 +22,9 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * The vaults are deployed using the ImmutableClone library that allows to deploy a clone of a contract
  * and initialize it with immutable data.
  * Two vaults are available:
- * - SimpleVault: This vault is used to interact with pairs where one of the token has no oracle. Deposits needs to be
+ * - SimpleVault: This vault is used to interact with pairs where one of the tokens has no oracle. Deposits need to be
  *                made in the same ratio as the vault's current balance.
- * - OracleVault: This vault is used to interact with pairs where both tokens have an oracle. Deposits doesn't need to
+ * - OracleVault: This vault is used to interact with pairs where both tokens have an oracle. Deposits don't need to
  *                be made in the same ratio as the vault's current balance.
  * Only one strategy is available:
  * - Strategy: This strategy allows the operator to rebalance and withdraw with no real limitation.
