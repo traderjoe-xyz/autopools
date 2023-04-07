@@ -212,8 +212,6 @@ contract OracleVaultTest is TestHelper {
         x = bound(x, type(uint256).max / (price == 0 ? 1 : price), type(uint256).max);
         y = bound(y, type(uint256).max - type(uint256).max / (price == 0 ? 1 : price) + 1, type(uint256).max);
 
-        console.log(price, x, y);
-
         vm.expectRevert();
         IOracleVault(vault).previewShares(x, y);
     }
