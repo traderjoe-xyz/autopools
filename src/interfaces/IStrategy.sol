@@ -68,8 +68,6 @@ interface IStrategy {
 
     function getIdleBalances() external view returns (uint256 amountX, uint256 amountY);
 
-    function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
-
     function initialize() external;
 
     function withdrawAll() external;
@@ -83,8 +81,6 @@ interface IStrategy {
         uint256 maxPercentageToAddX,
         uint256 maxPercentageToAddY
     ) external;
-
-    function collectFees() external;
 
     function swap(address executor, IOneInchRouter.SwapDescription memory desc, bytes memory data) external;
 

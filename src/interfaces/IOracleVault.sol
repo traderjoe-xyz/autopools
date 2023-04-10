@@ -16,6 +16,7 @@ import {IAggregatorV3} from "./IAggregatorV3.sol";
  */
 interface IOracleVault is IBaseVault {
     error OracleVault__InvalidPrice();
+    error OracleVault__StalePrice();
 
     function getOracleX() external pure returns (IAggregatorV3 oracleX);
 

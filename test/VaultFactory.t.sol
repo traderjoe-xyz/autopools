@@ -6,12 +6,20 @@ import "./TestHelper.sol";
 
 contract VaultFactoryTest is TestHelper {
     function setUp() public override {
-        vm.createSelectFork(vm.rpcUrl("avalanche"), 26_000_000);
+        vm.createSelectFork(vm.rpcUrl("avalanche"), 28_400_135);
 
         address implementation = address(new VaultFactory(wavax));
         factory = VaultFactory(address(new TransparentUpgradeableProxy(implementation, address(1), "")));
 
         factory.initialize(owner);
+
+        address factoryOwner = lbFactory.owner();
+
+        vm.startPrank(factoryOwner);
+        wavax_usdc_20bp = address(lbFactory.createLBPair(IERC20(wavax), IERC20(usdc), 8_376_279, 20)); // 20 usdc per 1 wavax
+        usdt_usdc_1bp = address(lbFactory.createLBPair(IERC20(usdt), IERC20(usdc), 1 << 23, 1)); // 1 usdc per 1 usdt
+        joe_wavax_15bp = address(lbFactory.createLBPair(IERC20(joe), IERC20(wavax), 8_386_147, 15)); // 0.025 wavax per 1 joe
+        vm.stopPrank();
     }
 
     function test_GetWNative() public {

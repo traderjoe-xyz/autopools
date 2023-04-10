@@ -36,6 +36,7 @@ interface IBaseVault is IERC20Upgradeable {
     error BaseVault__ZeroAmount();
     error BaseVault__ZeroShares();
     error BaseVault__InvalidRound();
+    error BaseVault__Unauthorized();
 
     struct QueuedWithdrawal {
         mapping(address => uint256) userWithdrawals;
@@ -63,15 +64,13 @@ interface IBaseVault is IERC20Upgradeable {
 
     event StrategySet(IStrategy strategy);
 
-    event DepositFeeSet(uint256 fee);
-
-    event WithdrawalFeeSet(uint256 fee);
-
     event WhitelistStateChanged(bool state);
 
     event WhitelistAdded(address[] addresses);
 
     event WhitelistRemoved(address[] addresses);
+
+    event Recovered(address token, address recipient, uint256 amount);
 
     event DepositsPaused();
 
@@ -98,8 +97,6 @@ interface IBaseVault is IERC20Upgradeable {
     function getOperators() external view returns (address defaultOperator, address operator);
 
     function getBalances() external view returns (uint256 amountX, uint256 amountY);
-
-    function getPendingFees() external view returns (uint256 amountX, uint256 amountY);
 
     function previewShares(uint256 amountX, uint256 amountY)
         external
@@ -138,7 +135,7 @@ interface IBaseVault is IERC20Upgradeable {
 
     function queueWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
 
-    function cancelQueuedWithdrawal(uint256 shares, address recipient) external returns (uint256 round);
+    function cancelQueuedWithdrawal(uint256 shares) external returns (uint256 round);
 
     function redeemQueuedWithdrawal(uint256 round, address recipient)
         external

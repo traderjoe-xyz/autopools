@@ -2,6 +2,8 @@
 
 pragma solidity 0.8.10;
 
+import "joe-v2/libraries/math/LiquidityConfigurations.sol";
+
 import "./TestHelper.sol";
 
 contract VaultAndStrategyTest is TestHelper {
@@ -70,6 +72,7 @@ contract VaultAndStrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), x, "test_WithdrawFromVault::3");
@@ -96,7 +99,7 @@ contract VaultAndStrategyTest is TestHelper {
         depositToVault(vault, alice, amountX, amountY);
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 100e6, 20e6);
@@ -111,9 +114,10 @@ contract VaultAndStrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256 depositInY = ((price * amountX) >> 128) + amountY;
         uint256 receivedInY =
@@ -123,12 +127,12 @@ contract VaultAndStrategyTest is TestHelper {
     }
 
     function test_DepositAndWithdrawWithFees() external {
-        depositToVault(vault, alice, 1e24, 1e18);
+        depositToVault(vault, alice, 1e36, 1e36);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 20e6, 200e6);
+        (desiredL[0], desiredL[1], desiredL[2]) = (100_000e6, 100_000e6, 100_000e6);
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(1, 3, 2, type(uint24).max, desiredL, 1e18, 1e18);
@@ -162,9 +166,10 @@ contract VaultAndStrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256 depositInY = ((price * 1e18) >> 128) + 1e6;
         uint256 receivedInY =
@@ -176,7 +181,7 @@ contract VaultAndStrategyTest is TestHelper {
     function test_DepositAndWithdrawNoActive() external {
         depositToVault(vault, alice, 1e24, 1e18);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (50e6, 200e6, 1000e6);
@@ -194,61 +199,17 @@ contract VaultAndStrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
         assertGt(IERC20Upgradeable(wavax).balanceOf(alice), 0, "test_DepositAndWithdrawNoActive::1");
         assertGt(IERC20Upgradeable(usdc).balanceOf(alice), 0, "test_DepositAndWithdrawNoActive::2");
     }
 
-    function test_DepositAndCollectFees() external {
-        depositToVault(vault, alice, 20e18, 200e6);
-
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
-
-        uint256[] memory desiredL = new uint256[](5);
-        (desiredL[0], desiredL[1], desiredL[2], desiredL[3], desiredL[4]) = (100e6, 20e6, 200e6, 100e6, 100e6);
-
-        vm.startPrank(owner);
-        factory.setPendingAumAnnualFee(IBaseVault(vault), 0.1e4);
-        IStrategy(strategy).rebalance(
-            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, desiredL, 1e18, 1e18
-        );
-        vm.stopPrank();
-
-        {
-            deal(usdc, bob, 100_000e6);
-            vm.prank(bob);
-            IERC20Upgradeable(usdc).transfer(wavax_usdc_20bp, 100_000e6);
-
-            ILBPair(wavax_usdc_20bp).swap(false, bob);
-
-            deal(wavax, bob, 10_000e18);
-
-            vm.prank(bob);
-            IERC20Upgradeable(wavax).transfer(wavax_usdc_20bp, 10_000e18);
-
-            ILBPair(wavax_usdc_20bp).swap(true, bob);
-
-            deal(usdc, bob, 200_000e6);
-            vm.prank(bob);
-            IERC20Upgradeable(usdc).transfer(wavax_usdc_20bp, 200_000e6);
-
-            ILBPair(wavax_usdc_20bp).swap(false, bob);
-        }
-
-        uint256 balanceX = IERC20Upgradeable(wavax).balanceOf(strategy);
-        uint256 balanceY = IERC20Upgradeable(usdc).balanceOf(strategy);
-
-        IStrategy(strategy).collectFees();
-
-        assertGt(IERC20Upgradeable(wavax).balanceOf(strategy), balanceX, "test_DepositAndCollectFees::1");
-        assertGt(IERC20Upgradeable(usdc).balanceOf(strategy), balanceY, "test_DepositAndCollectFees::2");
-    }
-
     function test_DepositAndSetStrategy() external {
         depositToVault(vault, alice, 25e18, 400e6);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
@@ -275,6 +236,7 @@ contract VaultAndStrategyTest is TestHelper {
         IStrategy(newStrategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
         vm.stopPrank();
 
+        vm.prank(alice);
         IBaseVault(vault).redeemQueuedWithdrawal(0, alice);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), amountX, "test_DepositAndSetStrategy::1");
@@ -284,7 +246,7 @@ contract VaultAndStrategyTest is TestHelper {
     function test_DepositAndEmergencyWithdraw() external {
         depositToVault(vault, alice, 25e18, 400e6);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
@@ -317,9 +279,11 @@ contract VaultAndStrategyTest is TestHelper {
         assertEq(y, 20e6 * shares / (shares + 1e6), "test_WithdrawFromVault::2");
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(1, alice);
 
         vm.expectRevert(IBaseVault.BaseVault__InvalidRound.selector);
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
         vm.prank(alice);
@@ -328,6 +292,7 @@ contract VaultAndStrategyTest is TestHelper {
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
+        vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
 
         assertEq(IERC20Upgradeable(wavax).balanceOf(alice), x, "test_WithdrawFromVault::3");

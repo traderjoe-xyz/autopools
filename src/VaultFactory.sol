@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.10;
 
-import {ClonesWithImmutableArgs} from "clones-with-immutable-args/ClonesWithImmutableArgs.sol";
+import {ImmutableClone} from "joe-v2/libraries/ImmutableClone.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IERC20MetadataUpgradeable} from "openzeppelin-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
@@ -19,12 +19,12 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * @title Liquidity Book Vault Factory contract
  * @author Trader Joe
  * @notice This contract is used to deploy new vaults. It is made to be used with the transparent proxy pattern.
- * The vaults are deployed using the ClonesWithImmutableArgs library that allows to deploy a clone of a contract
+ * The vaults are deployed using the ImmutableClone library that allows to deploy a clone of a contract
  * and initialize it with immutable data.
  * Two vaults are available:
- * - SimpleVault: This vault is used to interact with pairs where one of the token has no oracle. Deposits needs to be
+ * - SimpleVault: This vault is used to interact with pairs where one of the tokens has no oracle. Deposits need to be
  *                made in the same ratio as the vault's current balance.
- * - OracleVault: This vault is used to interact with pairs where both tokens have an oracle. Deposits doesn't need to
+ * - OracleVault: This vault is used to interact with pairs where both tokens have an oracle. Deposits don't need to
  *                be made in the same ratio as the vault's current balance.
  * Only one strategy is available:
  * - Strategy: This strategy allows the operator to rebalance and withdraw with no real limitation.
@@ -37,7 +37,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     mapping(VaultType => address[]) private _vaults;
     mapping(StrategyType => address[]) private _strategies;
 
-    // Updated in v2
+    mapping(address => VaultType) private _vaultType;
     mapping(address => StrategyType) private _strategyType;
 
     mapping(VaultType => address) private _vaultImplementation;
@@ -45,9 +45,6 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
     address private _feeRecipient;
     address private _defaultOperator;
-
-    // Added in v2
-    mapping(address => VaultType) private _vaultType;
 
     /**
      * @dev Modifier to check if the type id is valid.
@@ -66,6 +63,9 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
     constructor(address wnative) {
         _disableInitializers();
 
+        // safety check
+        IERC20Upgradeable(wnative).balanceOf(address(this));
+
         _wnative = wnative;
     }
 
@@ -73,65 +73,14 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @dev Initialize the contract.
      * @param owner The address of the owner of the contract.
      */
-    function initialize(address owner) public reinitializer(2) {
-        if (owner == msg.sender) revert VaultFactory__ProxyAdminCannotBeOwner();
+    function initialize(address owner) public initializer {
+        if (owner == address(0)) revert VaultFactory__InvalidOwner();
 
         __Ownable2Step_init();
         _transferOwnership(owner);
 
         _setDefaultOperator(owner);
         _setFeeRecipient(owner);
-
-        // Update the vault types deployed prior to v2
-        uint256 length = _vaults[VaultType.None].length;
-        for (uint256 i = length; i > 0; --i) {
-            address vault = _vaults[VaultType.None][i - 1];
-
-            _vaultType[vault] = VaultType.Simple;
-
-            _vaults[VaultType.Simple].push(vault);
-            _vaults[VaultType.None].pop();
-        }
-
-        length = _vaults[VaultType.Simple].length;
-        for (uint256 i = length; i > 0; --i) {
-            address vault = _vaults[VaultType.Simple][i - 1];
-
-            _vaultType[vault] = VaultType.Oracle;
-
-            _vaults[VaultType.Oracle].push(vault);
-            _vaults[VaultType.Simple].pop();
-        }
-
-        // Update the strategy types deployed prior to v2
-        length = _strategies[StrategyType.None].length;
-        for (uint256 i = length; i > 0; --i) {
-            address strategy = _strategies[StrategyType.None][i - 1];
-
-            _strategyType[strategy] = StrategyType.Default;
-
-            _strategies[StrategyType.Default].push(strategy);
-            _strategies[StrategyType.None].pop();
-        }
-
-        //Update the implementation deployed prior to v2
-        address imp;
-        if ((imp = _vaultImplementation[VaultType.Simple]) != address(0)) {
-            _setVaultImplementation(VaultType.Oracle, imp);
-        }
-        if ((imp = _vaultImplementation[VaultType.None]) != address(0)) {
-            _setVaultImplementation(VaultType.Simple, imp);
-        }
-        if (_vaultImplementation[VaultType.None] != address(0)) {
-            _setVaultImplementation(VaultType.None, address(0));
-        }
-
-        if ((imp = _strategyImplementation[StrategyType.None]) != address(0)) {
-            _setStrategyImplementation(StrategyType.Default, imp);
-        }
-        if (_strategyImplementation[StrategyType.None] != address(0)) {
-            _setStrategyImplementation(StrategyType.None, address(0));
-        }
     }
 
     /**
@@ -234,6 +183,25 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         return _strategyImplementation[sType];
     }
 
+    function batchRedeemQueuedWithdrawals(
+        address[] calldata vaults,
+        uint256[] calldata rounds,
+        bool[] calldata withdrawNative
+    ) external override {
+        if (vaults.length != rounds.length || vaults.length != withdrawNative.length) {
+            revert VaultFactory__InvalidLength();
+        }
+
+        for (uint256 i; i < vaults.length;) {
+            if (withdrawNative[i]) IBaseVault(vaults[i]).redeemQueuedWithdrawalNative(rounds[i], msg.sender);
+            else IBaseVault(vaults[i]).redeemQueuedWithdrawal(rounds[i], msg.sender);
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
     /**
      * @notice Sets the address of the vault implementation of the given type.
      * @param vType The type of the vault. (0: SimpleVault, 1: OracleVault)
@@ -313,8 +281,10 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
         returns (address vault, address strategy)
     {
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
+        if (dataFeedX.decimals() != dataFeedY.decimals()) revert VaultFactory__InvalidDecimals();
+
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
 
         vault = _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
         strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
@@ -335,8 +305,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
         returns (address vault, address strategy)
     {
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
 
         vault = _createSimpleVault(lbPair, tokenX, tokenY);
         strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
@@ -350,8 +320,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @return vault The address of the new vault.
      */
     function createSimpleVault(ILBPair lbPair) external override onlyOwner returns (address vault) {
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
 
         return _createSimpleVault(lbPair, tokenX, tokenY);
     }
@@ -369,8 +339,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
         returns (address vault)
     {
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
 
         return _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
     }
@@ -382,8 +352,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      */
     function createDefaultStrategy(IBaseVault vault) external override onlyOwner returns (address strategy) {
         ILBPair lbPair = vault.getPair();
-        address tokenX = address(lbPair.tokenX());
-        address tokenY = address(lbPair.tokenY());
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
 
         return _createDefaultStrategy(address(vault), lbPair, tokenX, tokenY);
     }
@@ -497,7 +467,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         string memory vName;
 
         if (vType == VaultType.Simple) vName = "Simple";
-        else vName = "Oracle";
+        else if (vType == VaultType.Oracle) vName = "Oracle";
+        else revert VaultFactory__InvalidType();
 
         return string(abi.encodePacked("Automated Pool Token - ", vName, " Vault #", vaultId.toString()));
     }
@@ -564,7 +535,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
         uint256 vaultId = _vaults[vType].length;
 
-        vault = ClonesWithImmutableArgs.clone(vaultImplementation, vaultImmutableData);
+        bytes32 salt = keccak256(abi.encodePacked(vType, vaultId));
+        vault = ImmutableClone.cloneDeterministic(vaultImplementation, vaultImmutableData, salt);
 
         _vaults[vType].push(vault);
         _vaultType[vault] = vType;
@@ -585,7 +557,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         internal
         returns (address strategy)
     {
-        uint256 binStep = lbPair.feeParameters().binStep;
+        uint256 binStep = lbPair.getBinStep();
         bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY, uint16(binStep));
 
         return _createStrategy(StrategyType.Default, address(vault), lbPair, strategyImmutableData);
@@ -608,7 +580,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
         uint256 strategyId = _strategies[sType].length;
 
-        strategy = ClonesWithImmutableArgs.clone(strategyImplementation, strategyImmutableData);
+        bytes32 salt = keccak256(abi.encodePacked(sType, strategyId));
+        strategy = ImmutableClone.cloneDeterministic(strategyImplementation, strategyImmutableData, salt);
 
         _strategies[sType].push(strategy);
         _strategyType[strategy] = sType;
@@ -633,6 +606,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
      * @param feeRecipient The address of the fee recipient.
      */
     function _setFeeRecipient(address feeRecipient) internal {
+        if (feeRecipient == address(0)) revert VaultFactory__InvalidFeeRecipient();
+
         _feeRecipient = feeRecipient;
 
         emit FeeRecipientSet(msg.sender, feeRecipient);

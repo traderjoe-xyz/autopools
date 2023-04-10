@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.10;
 
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 
 import {BaseVault} from "./BaseVault.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
@@ -27,9 +27,9 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * - 0x52: 20 bytes: The address of the oracle of the token Y.
  */
 contract OracleVault is BaseVault, IOracleVault {
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
 
-    uint256 private constant _PRICE_OFFSET = 128;
+    uint8 private constant _PRICE_OFFSET = 128;
 
     /**
      * @dev Constructor of the contract.
@@ -83,9 +83,10 @@ contract OracleVault is BaseVault, IOracleVault {
      * @return uintPrice The oracle latest answer.
      */
     function _getOraclePrice(IAggregatorV3 dataFeed) internal view returns (uint256 uintPrice) {
-        (, int256 price,,,) = dataFeed.latestRoundData();
+        (, int256 price,, uint256 updatedAt,) = dataFeed.latestRoundData();
 
-        if (price <= 0 || (uintPrice = uint256(price)) > type(uint128).max) revert OracleVault__InvalidPrice();
+        if (updatedAt == 0 || updatedAt + 24 hours < block.timestamp) revert OracleVault__StalePrice();
+        if (price <= 0 || (uintPrice = uint256(price)) > type(uint96).max) revert OracleVault__InvalidPrice();
     }
 
     /**

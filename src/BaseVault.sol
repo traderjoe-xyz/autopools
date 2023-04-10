@@ -2,18 +2,15 @@
 
 pragma solidity 0.8.10;
 
-import {Clone} from "clones-with-immutable-args/Clone.sol";
+import {Clone} from "joe-v2/libraries/Clone.sol";
 import {ERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {Initializable} from "openzeppelin-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
-import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
-import {Math512Bits} from "joe-v2/libraries/Math512Bits.sol";
+import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 import {ReentrancyGuardUpgradeable} from "openzeppelin-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {SafeERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import {SafeCast} from "joe-v2/libraries/SafeCast.sol";
+import {SafeCast} from "joe-v2/libraries/math/SafeCast.sol";
 
-import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 import {IBaseVault} from "./interfaces/IBaseVault.sol";
 import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
@@ -33,7 +30,7 @@ import {IWNative} from "./interfaces/IWNative.sol";
  */
 abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeable, IBaseVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using Math512Bits for uint256;
+    using Uint256x256Math for uint256;
     using SafeCast for uint256;
 
     uint8 internal constant _SHARES_DECIMALS = 6;
@@ -50,8 +47,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
     QueuedWithdrawal[] private _queuedWithdrawalsByRound;
 
-    uint128 private _totalAmountX;
-    uint128 private _totalAmountY;
+    uint256 private _totalAmountX;
+    uint256 private _totalAmountY;
 
     /**
      * @dev Modifier to check if the caller is the factory.
@@ -106,7 +103,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     /**
      * @dev Receive function. Mainly added to silence the compiler warning.
      * Highly unlikely to be used as the base vault needs at least 62 bytes of immutable data added to the payload
-     * (3 addresses and 2 bytes of lenths), so this function should never be called.
+     * (3 addresses and 2 bytes for length), so this function should never be called.
      */
     receive() external payable {
         if (msg.sender != _wnative) revert BaseVault__OnlyWNative();
@@ -225,17 +222,6 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @dev Returns the pending fees of the strategy.
-     * @return feesX The pending fees of token X.
-     * @return feesY The pending fees of token Y.
-     */
-    function getPendingFees() public view virtual override returns (uint256 feesX, uint256 feesY) {
-        IStrategy strategy = _strategy;
-
-        return address(strategy) == address(0) ? (0, 0) : strategy.getPendingFees();
-    }
-
-    /**
      * @dev Preview the amount of shares to be minted.
      * @param amountX The amount of token X to be deposited.
      * @param amountY The amount of token Y to be deposited.
@@ -350,8 +336,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
 
         // Calculate the amounts to be redeemed.
         if (totalShares > 0) {
-            amountX = totalAmountX * shares / totalShares;
-            amountY = totalAmountY * shares / totalShares;
+            amountX = totalAmountX.mulDivRoundDown(shares, totalShares);
+            amountY = totalAmountY.mulDivRoundDown(shares, totalShares);
         }
     }
 
@@ -475,19 +461,17 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @notice Cancels a queued withdrawal of `shares` for `recipient`. Cancelling a withdrawal is
+     * @notice Cancels a queued withdrawal of `shares`. Cancelling a withdrawal is
      * only possible before the next rebalance. The user can cancel the withdrawal if they want to
      * stay in the vault. They will receive the vault shares back.
      * @param shares The shares to be cancelled for withdrawal.
-     * @param recipient The address that will receive the withdrawn tokens after the rebalance.
      * @return round The round of the withdrawal that was cancelled.
      */
-    function cancelQueuedWithdrawal(uint256 shares, address recipient)
+    function cancelQueuedWithdrawal(uint256 shares)
         public
         virtual
         override
         nonReentrant
-        onlyValidRecipient(recipient)
         NonZeroShares(shares)
         returns (uint256 round)
     {
@@ -588,8 +572,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 totalShares = totalSupply();
 
         // Calculate the amounts to be withdrawn.
-        uint256 amountX = balanceX * shares / totalShares;
-        uint256 amountY = balanceY * shares / totalShares;
+        uint256 amountX = balanceX.mulDivRoundDown(shares, totalShares);
+        uint256 amountY = balanceY.mulDivRoundDown(shares, totalShares);
 
         // Burn the shares of the user.
         _burn(msg.sender, shares);
@@ -634,8 +618,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 receivedY = _tokenY().balanceOf(address(this)) - totalAmountY;
 
         // Update the total amounts of tokens in the vault.
-        _totalAmountX = (totalAmountX + receivedX).safe128();
-        _totalAmountY = (totalAmountY + receivedY).safe128();
+        _totalAmountX = totalAmountX + receivedX;
+        _totalAmountY = totalAmountY + receivedY;
 
         // Update the total amounts of tokens in the queued withdrawals.
         queuedWithdrawals.totalAmountX = uint128(receivedX);
@@ -712,7 +696,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @param addresses The addresses to be added to the whitelist.
      */
     function addToWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             if (_whitelistedUsers[addresses[i]]) revert BaseVault__AlreadyWhitelisted(addresses[i]);
 
             _whitelistedUsers[addresses[i]] = true;
@@ -726,7 +710,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
      * @param addresses The addresses to be removed from the whitelist.
      */
     function removeFromWhitelist(address[] memory addresses) public virtual override onlyFactory nonReentrant {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             if (!_whitelistedUsers[addresses[i]]) revert BaseVault__NotWhitelisted(addresses[i]);
 
             _whitelistedUsers[addresses[i]] = false;
@@ -780,7 +764,7 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
             uint256 excessStrategy = balanceOf(strategy) - getCurrentTotalQueuedWithdrawal();
 
             // If the token is the vault's token, the remaining amount must be greater than the minimum shares.
-            if (token == this && balanceOf(address(this)) + excessStrategy < amount + _SHARES_PRECISION) {
+            if (balanceOf(address(this)) + excessStrategy < amount + _SHARES_PRECISION) {
                 revert BaseVault__BurnMinShares();
             }
 
@@ -791,6 +775,18 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         }
 
         token.safeTransfer(recipient, amount);
+
+        // Safety check for tokens with double entry points.
+        if (
+            strategy == address(0)
+                && (
+                    _tokenX().balanceOf(address(this)) < _totalAmountX || _tokenY().balanceOf(address(this)) < _totalAmountY
+                )
+        ) {
+            revert BaseVault__InvalidToken();
+        }
+
+        emit Recovered(address(token), recipient, amount);
     }
 
     /**
@@ -875,8 +871,8 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
     }
 
     /**
-     * @dev Returns the total amount of tokens held in the strategy. This includes the balance, the amounts deposited in
-     * LB and the unclaiemd and redeemed fees.
+     * @dev Returns the total amount of tokens held in the strategy. This includes the balance of the contract and the
+     * amount of tokens deposited in LB.
      * Will return the balance of the vault if no strategy is set.
      * @param strategy The address of the strategy.
      * @return amountX The amount of token X held in the strategy.
@@ -956,16 +952,21 @@ abstract contract BaseVault is Clone, ERC20Upgradeable, ReentrancyGuardUpgradeab
         uint256 shares = queuedWithdrawals.userWithdrawals[user];
         if (shares == 0) revert BaseVault__NoQueuedWithdrawal();
 
+        // Only the user can redeem their withdrawal. The factory is also allowed as it batches withdrawals for users
+        if (user != msg.sender && msg.sender != address(_factory)) revert BaseVault__Unauthorized();
+
         // Calculate the amount of tokens to be withdrawn, pro rata to the amount of shares
         uint256 totalQueuedShares = queuedWithdrawals.totalQueuedShares;
         queuedWithdrawals.userWithdrawals[user] = 0;
 
-        amountX = uint256(queuedWithdrawals.totalAmountX) * shares / totalQueuedShares;
-        amountY = uint256(queuedWithdrawals.totalAmountY) * shares / totalQueuedShares;
+        amountX = uint256(queuedWithdrawals.totalAmountX).mulDivRoundDown(shares, totalQueuedShares);
+        amountY = uint256(queuedWithdrawals.totalAmountY).mulDivRoundDown(shares, totalQueuedShares);
+
+        if (amountX == 0 && amountY == 0) revert BaseVault__ZeroAmount();
 
         // Update the total amount of shares queued for withdrawal
-        if (amountX != 0) _totalAmountX -= amountX.safe128();
-        if (amountY != 0) _totalAmountY -= amountY.safe128();
+        if (amountX != 0) _totalAmountX -= amountX;
+        if (amountY != 0) _totalAmountY -= amountY;
 
         emit WithdrawalRedeemed(msg.sender, user, round, shares, amountX, amountY);
     }

@@ -97,13 +97,6 @@ contract StrategyTest is TestHelper {
         assertEq(y, 1e6, "test_GetBalances::6");
     }
 
-    function test_GetPendingFees() external {
-        (uint256 x, uint256 y) = IStrategy(strategy).getPendingFees();
-
-        assertEq(x, 0, "test_GetPendingFees::1");
-        assertEq(y, 0, "test_GetPendingFees::2");
-    }
-
     function test_GetPendingAumFee() external {
         assertEq(IStrategy(strategy).getAumAnnualFee(), 0, "test_GetPendingAumFee::1");
 
@@ -141,13 +134,6 @@ contract StrategyTest is TestHelper {
         IStrategy(strategy).setPendingAumAnnualFee(0.25e4 + 1);
     }
 
-    function test_CollectFees() external {
-        IStrategy(strategy).collectFees();
-
-        assertEq(IERC20Upgradeable(wavax).balanceOf(address(strategy)), 0, "test_CollectFees::1");
-        assertEq(IERC20Upgradeable(usdc).balanceOf(address(strategy)), 0, "test_CollectFees::2");
-    }
-
     function test_RebalanceClose() public {
         uint256 amountX = 1e24;
         uint256 amountY = 1e18;
@@ -155,7 +141,7 @@ contract StrategyTest is TestHelper {
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
@@ -166,7 +152,7 @@ contract StrategyTest is TestHelper {
         );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256 balancesInY = ((price * x) >> 128) + y;
         uint256 amountInY = ((price * amountX) >> 128) + amountY;
@@ -184,7 +170,7 @@ contract StrategyTest is TestHelper {
         vm.expectRevert(IStrategy.Strategy__OnlyOperators.selector);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         vm.startPrank(address(owner));
         vm.expectRevert(IStrategy.Strategy__ZeroAmounts.selector);
@@ -342,7 +328,7 @@ contract StrategyTest is TestHelper {
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (30e6, 60e6, 30e6);
@@ -382,7 +368,7 @@ contract StrategyTest is TestHelper {
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         uint256[] memory desiredL = new uint256[](3);
         (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
@@ -399,7 +385,7 @@ contract StrategyTest is TestHelper {
 
         for (uint256 i = 0; i < 3; i++) {
             uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 100 + i);
-            assertApproxEqRel(amount, desiredL[i], 1e14, "test_RebalanceFar::1");
+            assertApproxEqRel(amount, desiredL[i] << 128, 1e14, "test_RebalanceFar::1");
         }
     }
 
@@ -432,8 +418,9 @@ contract StrategyTest is TestHelper {
     }
 
     function test_revert_MaxAmountExceededX() external {
-        (,, uint256 activeId) = ILBPair(wavax_usdc_20bp).getReservesAndId();
-        uint256 price = router.getPriceFromId(ILBPair(wavax_usdc_20bp), uint24(activeId));
+        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
+
+        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
 
         uint256[] memory desiredL = new uint256[](2);
         (desiredL[0], desiredL[1]) = (price * 1e18 >> 128, price * 1e18 >> 128);
