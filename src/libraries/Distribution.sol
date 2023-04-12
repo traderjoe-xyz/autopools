@@ -127,17 +127,17 @@ library Distribution {
      * @notice Computes the distribution from a given amount of tokens.
      * Returns the percentage of each amount in the total amount.
      * @param amounts The amounts of tokens to distribute.
-     * @param totalAmont The total amount of tokens to distribute.
+     * @param totalAmount The total amount of tokens to distribute.
      * @param start The index of the first amount to compute.
      * @param end The index of the last amount to compute.
      */
-    function computeDistribution(uint256[] memory amounts, uint256 totalAmont, uint256 start, uint256 end)
+    function computeDistribution(uint256[] memory amounts, uint256 totalAmount, uint256 start, uint256 end)
         internal
         pure
     {
-        if (totalAmont > 0) {
+        if (totalAmount > 0) {
             for (uint256 i = start; i < end;) {
-                amounts[i] = amounts[i] * PRECISION / totalAmont;
+                amounts[i] = amounts[i] * PRECISION / totalAmount;
 
                 unchecked {
                     ++i;
