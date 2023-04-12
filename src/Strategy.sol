@@ -106,6 +106,9 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      */
     function initialize() external initializer {
         __ReentrancyGuard_init();
+
+        _tokenX().safeApprove(address(_ONE_INCH_ROUTER), type(uint256).max);
+        _tokenY().safeApprove(address(_ONE_INCH_ROUTER), type(uint256).max);
     }
 
     /**
@@ -303,9 +306,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         if (desc.dstReceiver != address(this)) revert Strategy__InvalidReceiver();
         if (desc.amount == 0 || desc.minReturnAmount == 0) revert Strategy__InvalidAmount();
 
-        desc.srcToken.approve(address(_ONE_INCH_ROUTER), desc.amount);
         _ONE_INCH_ROUTER.swap(executor, desc, "", data);
-        desc.srcToken.approve(address(_ONE_INCH_ROUTER), 0);
     }
 
     /**
@@ -729,36 +730,29 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         // Get the amount of shares queued for withdrawal.
         queuedShares = IBaseVault(_vault()).getCurrentTotalQueuedWithdrawal();
 
-        // Withdraw from the Liquidity Book Pair and get the amount of tokens withdrawn.
-        (uint256 balanceX, uint256 balanceY, uint256 withdrawnX, uint256 withdrawnY) =
-            _withdrawFromLB(removedLower, removedUpper);
-
-        // Get the total amount of tokens in the strategy.
-        uint256 totalX = balanceX + withdrawnX;
-        uint256 totalY = balanceY + withdrawnY;
+        // Withdraw from the Liquidity Book Pair and get the amounts of tokens in the strategy.
+        (uint256 balanceX, uint256 balanceY) = _withdrawFromLB(removedLower, removedUpper);
 
         // Get the amount of tokens to withdraw from the queued withdraws.
         (queuedAmountX, queuedAmountY) = totalShares == 0 || queuedShares == 0
             ? (0, 0)
-            : (queuedShares.mulDivRoundDown(totalX, totalShares), queuedShares.mulDivRoundDown(totalY, totalShares));
+            : (queuedShares.mulDivRoundDown(balanceX, totalShares), queuedShares.mulDivRoundDown(balanceY, totalShares));
 
         // Get the amount that were not queued for withdrawal.
-        amountX = totalX - queuedAmountX;
-        amountY = totalY - queuedAmountY;
+        amountX = balanceX - queuedAmountX;
+        amountY = balanceY - queuedAmountY;
     }
 
     /**
      * @dev Withdraws tokens from the Liquidity Book Pair.
      * @param removedLower The lower end of the range to remove.
      * @param removedUpper The upper end of the range to remove.
-     * @return balanceX The amount of token X in the pair.
-     * @return balanceY The amount of token Y in the pair.
-     * @return withdrawnX The amount of token X withdrawn.
-     * @return withdrawnY The amount of token Y withdrawn.
+     * @return balanceX The amount of token X in the strategy.
+     * @return balanceY The amount of token Y in the strategy.
      */
     function _withdrawFromLB(uint24 removedLower, uint24 removedUpper)
         internal
-        returns (uint256 balanceX, uint256 balanceY, uint256 withdrawnX, uint256 withdrawnY)
+        returns (uint256 balanceX, uint256 balanceY)
     {
         uint256 length;
 
@@ -790,32 +784,23 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             }
         }
 
-        // If the range is empty, get the amount of tokens in the pair.
-        if (length == 0) {
-            balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
-            balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
-
-            return (balanceX, balanceY, 0, 0);
-        }
-
-        // If the length is different than the delta, update the arrays, this allows to avoid the zero shares error.
-        if (length != delta) {
-            assembly {
-                mstore(ids, length)
-                mstore(amounts, length)
+        // If the range is not empty, burn the tokens from the pair.
+        if (length > 0) {
+            // If the length is different than the delta, update the arrays, this allows to avoid the zero shares error.
+            if (length != delta) {
+                assembly {
+                    mstore(ids, length)
+                    mstore(amounts, length)
+                }
             }
+
+            // Burn the tokens from the pair.
+            ILBPair(pair).burn(address(this), address(this), ids, amounts);
         }
 
         // Get the amount of tokens in the strategy.
         balanceX = IERC20Upgradeable(_tokenX()).balanceOf(address(this));
         balanceY = IERC20Upgradeable(_tokenY()).balanceOf(address(this));
-
-        // Burn the tokens from the pair.
-        ILBPair(pair).burn(address(this), address(this), ids, amounts);
-
-        // Get the amount of tokens withdrawn.
-        withdrawnX = IERC20Upgradeable(_tokenX()).balanceOf(address(this)) - balanceX;
-        withdrawnY = IERC20Upgradeable(_tokenY()).balanceOf(address(this)) - balanceY;
     }
 
     /**
