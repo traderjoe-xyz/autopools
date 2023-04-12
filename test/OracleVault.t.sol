@@ -116,6 +116,8 @@ contract OracleVaultTest is TestHelper {
     function test_GetAumAnnualFee() external {
         assertEq(IOracleVault(vault).getAumAnnualFee(), 0, "test_GetAumAnnualFee::1");
 
+        deal(wavax, vault, 1);
+
         linkVaultToStrategy(vault, strategy);
         vm.prank(owner);
         IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
