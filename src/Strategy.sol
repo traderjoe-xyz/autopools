@@ -7,7 +7,6 @@ import {PriceHelper} from "joe-v2/libraries/PriceHelper.sol";
 import {IERC20Upgradeable} from "openzeppelin-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {ILBPair} from "joe-v2/interfaces/ILBPair.sol";
 import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
-import {ILBToken} from "joe-v2/interfaces/ILBToken.sol";
 import {LiquidityAmounts} from "joe-v2-periphery/periphery/LiquidityAmounts.sol";
 import {Uint256x256Math} from "joe-v2/libraries/math/Uint256x256Math.sol";
 import {LiquidityConfigurations} from "joe-v2/libraries/math/LiquidityConfigurations.sol";
@@ -460,7 +459,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             if (desiredActiveId > activeId) {
                 // If the desired active id is greater than the active id, we need to decrease the range.
                 unchecked {
-                    delta = desiredActiveId - uint24(activeId);
+                    delta = desiredActiveId - activeId;
 
                     newLower = newLower > delta ? newLower - delta : 0;
                     newUpper = newUpper > delta ? newUpper - delta : 0;
@@ -669,7 +668,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         if (lastRebalance < block.timestamp && (totalBalanceX > 0 || totalBalanceY > 0)) {
             uint256 annualFee = _aumAnnualFee;
 
-            if (annualFee > 0 && block.timestamp > lastRebalance) {
+            if (annualFee > 0) {
                 address feeRecipient = _factory.getFeeRecipient();
 
                 // Get the duration of the last rebalance and cap it to 1 day.
