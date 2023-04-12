@@ -665,8 +665,11 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         uint256 lastRebalance = _lastRebalance;
         _lastRebalance = block.timestamp.safe64();
 
+        // If the total balance is 0, early return to not charge the AUM annual fee nor update it.
+        if (totalBalanceX == 0 && totalBalanceY == 0) return (queuedShares, queuedAmountX, queuedAmountY);
+
         // Apply the AUM annual fee
-        if (lastRebalance < block.timestamp && (totalBalanceX > 0 || totalBalanceY > 0)) {
+        if (lastRebalance < block.timestamp) {
             uint256 annualFee = _aumAnnualFee;
 
             if (annualFee > 0) {
