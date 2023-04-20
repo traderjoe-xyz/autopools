@@ -303,12 +303,12 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
         if (desc.dstReceiver != address(this)) revert Strategy__InvalidReceiver();
         if (desc.amount == 0 || desc.minReturnAmount == 0) revert Strategy__InvalidAmount();
 
-        desc.srcToken.approve(address(_ONE_INCH_ROUTER), desc.amount);
+        desc.srcToken.safeApprove(address(_ONE_INCH_ROUTER), desc.amount);
 
         _ONE_INCH_ROUTER.swap(executor, desc, "", data);
 
         if (desc.srcToken.allowance(address(this), address(_ONE_INCH_ROUTER)) != 0) {
-            desc.srcToken.approve(address(_ONE_INCH_ROUTER), 0);
+            desc.srcToken.safeApprove(address(_ONE_INCH_ROUTER), 0);
         }
     }
 
