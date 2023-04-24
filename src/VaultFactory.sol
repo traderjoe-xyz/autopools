@@ -557,8 +557,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         internal
         returns (address strategy)
     {
-        uint256 binStep = lbPair.getBinStep();
-        bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY, uint16(binStep));
+        bytes memory strategyImmutableData = abi.encodePacked(vault, lbPair, tokenX, tokenY);
 
         return _createStrategy(StrategyType.Default, address(vault), lbPair, strategyImmutableData);
     }
