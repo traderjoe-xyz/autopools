@@ -17,7 +17,6 @@ interface IStrategy {
     error Strategy__OnlyFactory();
     error Strategy__OnlyVault();
     error Strategy__OnlyOperators();
-    error Strategy__InvalidDistribution();
     error Strategy__ZeroAmounts();
     error Strategy__InvalidAmount();
     error Strategy__InvalidToken();
@@ -27,8 +26,7 @@ interface IStrategy {
     error Strategy__ActiveIdSlippage();
     error Strategy__RangeAlreadySet();
     error Strategy__RangeTooWide();
-    error Strategy__InvalidAmountsLength();
-    error Strategy__MaxAmountExceeded();
+    error Strategy__InvalidLength();
 
     event OperatorSet(address operator);
 
@@ -77,9 +75,9 @@ interface IStrategy {
         uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
-        uint256[] memory desiredL,
-        uint256 maxPercentageToAddX,
-        uint256 maxPercentageToAddY
+        uint256 amountX,
+        uint256 amountY,
+        bytes calldata distributions
     ) external;
 
     function swap(address executor, IOneInchRouter.SwapDescription memory desc, bytes memory data) external;

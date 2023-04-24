@@ -18,7 +18,6 @@ import {IStrategy} from "./interfaces/IStrategy.sol";
 import {IBaseVault} from "./interfaces/IBaseVault.sol";
 import {IVaultFactory} from "./interfaces/IVaultFactory.sol";
 import {Math} from "./libraries/Math.sol";
-import {Distribution} from "./libraries/Distribution.sol";
 import {IOneInchRouter} from "./interfaces/IOneInchRouter.sol";
 
 /**
@@ -37,7 +36,6 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using LiquidityAmounts for address;
     using Math for uint256;
-    using Distribution for uint256[];
     using PriceHelper for uint24;
     using SafeCast for uint256;
     using Uint256x256Math for uint256;
@@ -54,7 +52,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     uint256 private constant _SCALED_YEAR_SUB_ONE = _SCALED_YEAR - 1;
 
     uint8 private constant _OFFSET = 128;
-    uint256 private constant _EVEN_COMPOSITION = (1 << _OFFSET) / 2; // 50%
+    uint256 private constant _PACKED_DISTRIBS_SIZE = 16;
 
     IVaultFactory private immutable _factory;
 
@@ -239,18 +237,17 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @param newUpper The upper bound of the new range.
      * @param desiredActiveId The desired active id.
      * @param slippageActiveId The slippage active id.
-     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
-     * @param maxPercentageToAddX The maximum percentage of token X to add.
-     * @param maxPercentageToAddY The maximum percentage of token Y to add.
+     * @param distributions The packed distributions. Each bytes16 of the distributions bytes is
+     * (distributionX, distributionY) from the `newLower`to the `newUpper` range.
      */
     function rebalance(
         uint24 newLower,
         uint24 newUpper,
         uint24 desiredActiveId,
         uint24 slippageActiveId,
-        uint256[] memory desiredL,
-        uint256 maxPercentageToAddX,
-        uint256 maxPercentageToAddY
+        uint256 amountX,
+        uint256 amountY,
+        bytes calldata distributions
     ) external override onlyOperators {
         {
             // Withdraw all the tokens from the LB pool and return the amounts and the queued withdrawals.
@@ -269,13 +266,10 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
             // Get the distributions and the amounts to deposit, this will take into account the composition of the
             // LB pair to avoid the active fee.
-            (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY) =
-            _getDistributionsAndAmounts(
-                activeId, newLower, newUpper, maxPercentageToAddX, maxPercentageToAddY, desiredL
-            );
+            bytes32[] memory liquidityConfigs = _getLiquidityConfigs(newLower, newUpper, distributions);
 
             // Deposit the tokens to the LB pool.
-            _depositToLB(newLower, newUpper, distributionX, distributionY, amountX, amountY);
+            _depositToLB(newLower, newUpper, liquidityConfigs, amountX, amountY);
         }
     }
 
@@ -486,80 +480,34 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @dev Returns the distributions and amounts following the `desiredL`.
-     * @param activeId The active id of the pair.
-     * @param newLower The lower end of the new range.
-     * @param newUpper The upper end of the new range.
-     * @param maxPercentageToAddX The maximum percentage of token X to add.
-     * @param maxPercentageToAddY The maximum percentage of token Y to add.
-     * @param desiredL The desired liquidity values, which are the amounts of tokens valued in Y.
-     * @return amountX The amount of token X to add.
-     * @return amountY The amount of token Y to add.
-     * @return distributionX The distribution of token X to add.
-     * @return distributionY The distribution of token Y to add.
+     * @dev Returns the liquidity configurations for the given range.
+     * @param idLower The lower end of the range.
+     * @param idUpper The upper end of the range.
+     * @param distributions The packed distributions. Each bytes16 of the distributions bytes is
+     * (distributionX, distributionY) from the `newLower`to the `newUpper` range. can be calculated as:
+     * distributions = abi.encodePacked[uint64(distribX0), uint64(distribY0), uint64(distribX1), uint64(distribY1), ...]
+     * @return liquidityConfigs The liquidity configurations for the given range.
      */
-    function _getDistributionsAndAmounts(
-        uint24 activeId,
-        uint24 newLower,
-        uint24 newUpper,
-        uint256 maxPercentageToAddX,
-        uint256 maxPercentageToAddY,
-        uint256[] memory desiredL
-    )
+    function _getLiquidityConfigs(uint24 idLower, uint24 idUpper, bytes calldata distributions)
         internal
-        view
-        returns (uint256 amountX, uint256 amountY, uint256[] memory distributionX, uint256[] memory distributionY)
+        pure
+        returns (bytes32[] memory liquidityConfigs)
     {
-        // Check if the range is valid and the amounts length is valid.
-        if (newLower > newUpper) revert Strategy__InvalidRange();
-        if (desiredL.length != newUpper - newLower + 1) revert Strategy__InvalidAmountsLength();
+        if (idUpper == 0 || idLower > idUpper) revert Strategy__InvalidRange();
+        if (distributions.length != (idUpper - idLower + 1) * _PACKED_DISTRIBS_SIZE) revert Strategy__InvalidLength();
 
-        // Get the active bin's price.
-        uint256 price = activeId.getPriceFromId(_binStep());
+        uint256 length = distributions.length / _PACKED_DISTRIBS_SIZE;
 
-        // If the active id is within the new range, get the distributions and amounts.
-        if (newLower <= activeId && activeId <= newUpper) {
-            // Get the composition factor.
-            uint256 compositionFactor = _getCompositionFactor(price, activeId);
+        liquidityConfigs = new bytes32[](length);
 
-            // Get the distributions and amounts following the `desiredL` and the composition factor.
-            (amountX, amountY, distributionX, distributionY) =
-                desiredL.getDistributions(compositionFactor, price, activeId - newLower);
-        } else {
-            distributionX = new uint256[](desiredL.length);
-            distributionY = new uint256[](desiredL.length);
+        uint256 index;
+        for (uint256 i; i < length; ++i) {
+            uint24 id = idLower + uint24(i);
 
-            if (activeId < newLower) {
-                // If the active id is lower than the new range, only X needs to be added.
-                amountX = desiredL.computeDistributionX(distributionX, price, 0, 0, false);
-            } else {
-                // If the active id is greater than the new range, only Y needs to be added.
-                amountY = desiredL.computeDistributionY(distributionY, 0, desiredL.length, false);
-            }
+            uint128 distribs = uint128(bytes16(distributions[index:index += _PACKED_DISTRIBS_SIZE]));
+
+            liquidityConfigs[i] = LiquidityConfigurations.encodeParams(uint64(distribs >> 64), uint64(distribs), id);
         }
-
-        // Get the maximum amounts to add.
-        uint256 maxAmountX = _tokenX().balanceOf(address(this)) * maxPercentageToAddX / _PRECISION;
-        uint256 maxAmountY = _tokenY().balanceOf(address(this)) * maxPercentageToAddY / _PRECISION;
-
-        if (amountX > maxAmountX || amountY > maxAmountY) revert Strategy__MaxAmountExceeded();
-    }
-
-    /**
-     * @dev Returns the composition factor of the active id.
-     * @param activeId The active id of the pair.
-     * @return compositionFactor The composition factor of the active id.
-     */
-    function _getCompositionFactor(uint256 price, uint24 activeId) internal view returns (uint256 compositionFactor) {
-        // Get the active bin's reserves.
-        (uint256 activeX, uint256 activeY) = _pair().getBin(activeId);
-
-        // Get the composition factor of the active bin, which is the ratio of the active bin's Y reserves to the
-        // bin liquidity (price * X reserves + Y reserves). If the bin liquidity is 0, the composition factor is set
-        // to 0.5.
-        uint256 binL = activeX.mulShiftRoundDown(price, _OFFSET) + activeY;
-
-        return binL == 0 ? _EVEN_COMPOSITION : activeY.shiftDivRoundDown(_OFFSET, binL);
     }
 
     /**
@@ -597,26 +545,20 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @dev Deposits tokens into the pair.
      * @param lower The lower end of the range.
      * @param upper The upper end of the range.
-     * @param distributionX The distribution of token X.
-     * @param distributionY The distribution of token Y.
+     * @param liquidityConfigs The liquidity configurations, encoded as bytes32.
      * @param amountX The amount of token X to deposit.
      * @param amountY The amount of token Y to deposit.
      */
     function _depositToLB(
         uint24 lower,
         uint24 upper,
-        uint256[] memory distributionX,
-        uint256[] memory distributionY,
+        bytes32[] memory liquidityConfigs,
         uint256 amountX,
         uint256 amountY
     ) internal {
         // Set the range, will check if the range is valid.
         _setRange(lower, upper);
 
-        // Get the delta of the range and check if the distributions and amounts are valid.
-        uint256 delta = upper - lower + 1;
-
-        if (distributionX.length != delta || distributionY.length != delta) revert Strategy__InvalidDistribution();
         if (amountX == 0 && amountY == 0) revert Strategy__ZeroAmounts();
 
         // Get the pair address and transfer the tokens to the pair.
@@ -624,15 +566,6 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
 
         if (amountX > 0) _tokenX().safeTransfer(pair, amountX);
         if (amountY > 0) _tokenY().safeTransfer(pair, amountY);
-
-        bytes32[] memory liquidityConfigs = new bytes32[](delta);
-
-        for (uint256 i; i < delta; ++i) {
-            uint24 id = lower + uint24(i);
-
-            liquidityConfigs[i] =
-                LiquidityConfigurations.encodeParams(uint64(distributionX[i]), uint64(distributionY[i]), id);
-        }
 
         // Mint the liquidity tokens.
         ILBPair(pair).mint(address(this), liquidityConfigs, address(this));
