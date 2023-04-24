@@ -134,6 +134,26 @@ contract StrategyTest is TestHelper {
         IStrategy(strategy).setPendingAumAnnualFee(0.25e4 + 1);
     }
 
+    function test_CollectAumFee() external {
+        depositToVault(vault, alice, 365e18, 365e6);
+
+        address recipient = makeAddr("recipient");
+
+        vm.startPrank(owner);
+        factory.setPendingAumAnnualFee(IBaseVault(vault), 0.25e4);
+        factory.setFeeRecipient(recipient);
+
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
+
+        vm.warp(block.timestamp + 1 days);
+
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
+
+        assertEq(IERC20(wavax).balanceOf(recipient), 0.25e4 * 365e18 / (365 * 10_000), "test_AumFeeCollected::1");
+        assertEq(IERC20(usdc).balanceOf(recipient), 0.25e4 * 365e6 / (365 * 10_000), "test_AumFeeCollected::2");
+        vm.stopPrank();
+    }
+
     function test_RebalanceClose() public {
         uint256 amountX = 1e24;
         uint256 amountY = 1e18;
