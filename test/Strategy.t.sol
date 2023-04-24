@@ -143,12 +143,12 @@ contract StrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 1e18, 1e18, distributions
         );
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
@@ -168,22 +168,25 @@ contract StrategyTest is TestHelper {
 
     function test_revert_Rebalance() external {
         vm.expectRevert(IStrategy.Strategy__OnlyOperators.selector);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
         vm.startPrank(address(owner));
         vm.expectRevert(IStrategy.Strategy__ZeroAmounts.selector);
-        IStrategy(strategy).rebalance(0, 1, uint24(activeId), 0, new uint256[](2), 0, 0);
+        IStrategy(strategy).rebalance(0, 1, uint24(activeId), 0, 0, 0, new bytes(32));
 
         vm.expectRevert(IStrategy.Strategy__InvalidRange.selector);
-        IStrategy(strategy).rebalance(1, 0, uint24(activeId), 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(1, 0, uint24(activeId), 0, 0, 0, new bytes(0));
 
-        vm.expectRevert(IStrategy.Strategy__InvalidAmountsLength.selector);
-        IStrategy(strategy).rebalance(1, 1, uint24(activeId), 0, new uint256[](0), 0, 0);
+        vm.expectRevert(IStrategy.Strategy__InvalidLength.selector);
+        IStrategy(strategy).rebalance(1, 1, uint24(activeId), 0, 0, 0, new bytes(15));
+
+        vm.expectRevert(IStrategy.Strategy__InvalidLength.selector);
+        IStrategy(strategy).rebalance(1, 1, uint24(activeId), 0, 0, 0, new bytes(17));
 
         vm.expectRevert(IStrategy.Strategy__ActiveIdSlippage.selector);
-        IStrategy(strategy).rebalance(1, 1, uint24(activeId) + 1, 0, new uint256[](3), 0, 0);
+        IStrategy(strategy).rebalance(1, 1, uint24(activeId) + 1, 0, 0, 0, new bytes(16));
         vm.stopPrank();
     }
 
@@ -194,15 +197,15 @@ contract StrategyTest is TestHelper {
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.startPrank(owner);
-        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, desiredL, 1e18, 1e18);
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, 1e18, 1e18, distributions);
 
         (uint256 x, uint256 y) = IStrategy(strategy).getBalances();
 
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
         vm.stopPrank();
 
         (uint256 x2, uint256 y2) = IStrategy(strategy).getBalances();
@@ -330,20 +333,30 @@ contract StrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (30e6, 60e6, 30e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 1e18, 1e18, distributions
         );
 
-        desiredL = new uint256[](5);
-
-        (desiredL[0], desiredL[1], desiredL[2], desiredL[3], desiredL[4]) = (10e6, 20e6, 60e6, 20e6, 10e6);
+        // deposit only 90% to make it easier to calculate LB amounts
+        distributions = abi.encodePacked(
+            uint64(0),
+            uint64(0.15e18),
+            uint64(0),
+            uint64(0.3e18),
+            uint64(0.45e18),
+            uint64(0.45e18),
+            uint64(0.3e18),
+            uint64(0),
+            uint64(0.15e18),
+            uint64(0)
+        );
 
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 2, uint24(activeId) + 2, uint24(activeId), 0, 1e18, 1e18, distributions
         );
         vm.stopPrank();
 
@@ -362,81 +375,80 @@ contract StrategyTest is TestHelper {
     }
 
     function test_RebalanceFar() external {
-        uint256 amountX = 1e24;
-        uint256 amountY = 1e18;
+        uint256 amountX = 2e18;
+        uint256 amountY = 2e18;
 
         deal(wavax, strategy, amountX);
         deal(usdc, strategy, amountY);
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 1e18, 1e18, distributions
         );
 
+        distributions =
+            abi.encodePacked(uint64(0), uint64(0.25e18), uint64(0), uint64(0.25e18), uint64(0), uint64(0.5e18));
+
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 100, uint24(activeId) - 98, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 100, uint24(activeId) - 98, uint24(activeId), 0, 1e18, 1e18, distributions
         );
         vm.stopPrank();
 
         for (uint256 i = 0; i < 3; i++) {
             uint256 amount = ILBToken(wavax_usdc_20bp).balanceOf(strategy, activeId - 100 + i);
-            assertApproxEqRel(amount, desiredL[i] << 128, 1e14, "test_RebalanceFar::1");
+            if (i == 2) {
+                assertApproxEqRel(amount, uint256(0.5e18) << 128, 1e14, "test_RebalanceFar::1");
+            } else {
+                assertApproxEqRel(amount, uint256(0.25e18) << 128, 1e14, "test_RebalanceFar::1");
+            }
         }
     }
 
     function test_revert_InvalidAmountsLength() external {
-        vm.expectRevert(IStrategy.Strategy__InvalidAmountsLength.selector);
+        vm.expectRevert(IStrategy.Strategy__InvalidLength.selector);
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, new uint256[](0), 1e18, 1e18);
+        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, 1e18, 1e18, new bytes(0));
     }
 
     function test_revert_RangeTooWide() external {
         vm.expectRevert(IStrategy.Strategy__RangeTooWide.selector);
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, new uint256[](52), 1e18, 1e18);
+        IStrategy(strategy).rebalance(0, 51, 0, type(uint24).max, 1e18, 1e18, new bytes(52 * 16));
     }
 
     function test_revert_MaxAmountExceededY() external {
-        uint256[] memory desiredL = new uint256[](2);
-        (desiredL[0], desiredL[1]) = (10e6, 10e6 + 1);
+        bytes memory distributions = abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0), uint64(0.5e18));
 
         deal(usdc, strategy, 20e6);
 
-        vm.expectRevert(IStrategy.Strategy__MaxAmountExceeded.selector);
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, desiredL, 0, 1e18);
-
-        (desiredL[0], desiredL[1]) = (10e6, 10e6);
+        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, 0, 20e6 + 1, distributions);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, desiredL, 0, 1e18);
+        IStrategy(strategy).rebalance(0, 1, 2, type(uint24).max, 0, 20e6, distributions);
     }
 
     function test_revert_MaxAmountExceededX() external {
-        uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
+        bytes memory distributions = abi.encodePacked(uint64(0.5e18), uint64(0), uint64(0.5e18), uint64(0));
 
-        uint256 price = ILBPair(wavax_usdc_20bp).getPriceFromId(uint24(activeId));
-
-        uint256[] memory desiredL = new uint256[](2);
-        (desiredL[0], desiredL[1]) = (price * 1e18 >> 128, price * 1e18 >> 128);
-
-        uint256 wavaxAmount = (desiredL[0] << 128) / price + (desiredL[1] << 128) / price;
+        uint256 wavaxAmount = 2e18;
 
         deal(wavax, strategy, wavaxAmount - 1);
 
-        vm.expectRevert(IStrategy.Strategy__MaxAmountExceeded.selector);
+        vm.expectRevert("SafeERC20: low-level call failed");
         vm.prank(owner);
-        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, desiredL, 1e18, 0);
+        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, wavaxAmount, 0, distributions);
 
         deal(wavax, strategy, wavaxAmount);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, desiredL, 1e18, 0);
+        IStrategy(strategy).rebalance(1, 2, 0, type(uint24).max, wavaxAmount, 0, distributions);
     }
 
     function _convertHexStringToBytes(string memory hexString) internal pure returns (bytes memory) {
