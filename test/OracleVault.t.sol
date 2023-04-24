@@ -120,7 +120,7 @@ contract OracleVaultTest is TestHelper {
 
         linkVaultToStrategy(vault, strategy);
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         assertEq(IOracleVault(vault).getAumAnnualFee(), 0.1e4, "test_GetAumAnnualFee::2");
     }

@@ -72,10 +72,10 @@ contract SimpleVaultTest is TestHelper {
         deal(wavax, strategy, 4e18);
         deal(usdc, strategy, 80e6);
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 40e6, 20e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
-        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, desiredL, 1e18, 1e18);
+        IStrategy(strategy).rebalance((1 << 23) - 1, (1 << 23) + 1, 1 << 23, 1 << 23, 4e18, 80e6, distributions);
         vm.stopPrank();
 
         assertEq(ISimpleVault(vault).getAumAnnualFee(), 0.1e4, "test_GetAumAnnualFee::2");
@@ -458,7 +458,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(qShares, shares, "test_QueueWithdrawal::4");
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         (uint256 balanceX, uint256 balanceY) = IBaseVault(vault).getBalances();
         (uint256 rAmountX, uint256 rAmountY) = IBaseVault(vault).getRedeemableAmounts(0, alice);
@@ -504,7 +504,7 @@ contract SimpleVaultTest is TestHelper {
         assertEq(qShares, shares, "test_QueueWithdrawal::4");
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         (uint256 balanceX, uint256 balanceY) = IBaseVault(vault).getBalances();
         (uint256 rAmountX, uint256 rAmountY) = IBaseVault(vault).getRedeemableAmounts(0, alice);
@@ -622,7 +622,7 @@ contract SimpleVaultTest is TestHelper {
         IBaseVault(vault).redeemQueuedWithdrawal(1, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.expectRevert(IBaseVault.BaseVault__NoQueuedWithdrawal.selector);
         vm.prank(bob);
@@ -670,7 +670,7 @@ contract SimpleVaultTest is TestHelper {
         uint256 round = IBaseVault(vault).getCurrentRound();
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.warp(block.timestamp + 3600);
 
@@ -684,7 +684,7 @@ contract SimpleVaultTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(1, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(strategy);
         IBaseVault(vault).executeQueuedWithdrawals();
@@ -703,7 +703,7 @@ contract SimpleVaultTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(shares / 2, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.expectRevert(IBaseVault.BaseVault__NotInEmergencyMode.selector);
         IBaseVault(vault).emergencyWithdraw();

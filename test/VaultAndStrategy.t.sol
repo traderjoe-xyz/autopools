@@ -70,7 +70,7 @@ contract VaultAndStrategyTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
@@ -101,18 +101,18 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (20e6, 100e6, 20e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0.5e18), uint64(1e18), uint64(0.25e18), uint64(0), uint64(0.25e18), uint64(0));
 
         vm.prank(owner);
 
-        IStrategy(strategy).rebalance(0, 2, 0, type(uint24).max, desiredL, 1e18, 1e18);
+        IStrategy(strategy).rebalance(0, 2, 0, type(uint24).max, 15e18, 100e6, distributions);
 
         vm.prank(alice);
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
@@ -131,11 +131,11 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (100_000e6, 100_000e6, 100_000e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(1, 3, 2, type(uint24).max, desiredL, 1e18, 1e18);
+        IStrategy(strategy).rebalance(1, 3, 2, type(uint24).max, 1e24, 1e24, distributions);
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
 
@@ -164,7 +164,7 @@ contract VaultAndStrategyTest is TestHelper {
         IOracleVault(vault).queueWithdrawal(shares, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
@@ -183,12 +183,12 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (50e6, 200e6, 1000e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.prank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 1e24, 1e18, distributions
         );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
@@ -197,7 +197,7 @@ contract VaultAndStrategyTest is TestHelper {
         IOracleVault(vault).queueWithdrawal(shares / 100_000, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
@@ -211,12 +211,12 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 25e18, 400e6, distributions
         );
 
         uint256 shares = IOracleVault(vault).balanceOf(alice);
@@ -231,9 +231,9 @@ contract VaultAndStrategyTest is TestHelper {
 
         vm.startPrank(owner);
         vm.expectRevert(IBaseVault.BaseVault__OnlyStrategy.selector);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
-        IStrategy(newStrategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(newStrategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
         vm.stopPrank();
 
         vm.prank(alice);
@@ -248,12 +248,12 @@ contract VaultAndStrategyTest is TestHelper {
 
         uint256 activeId = ILBPair(wavax_usdc_20bp).getActiveId();
 
-        uint256[] memory desiredL = new uint256[](3);
-        (desiredL[0], desiredL[1], desiredL[2]) = (100e6, 200e6, 100e6);
+        bytes memory distributions =
+            abi.encodePacked(uint64(0), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0.5e18), uint64(0));
 
         vm.startPrank(owner);
         IStrategy(strategy).rebalance(
-            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, desiredL, 1e18, 1e18
+            uint24(activeId) - 1, uint24(activeId) + 1, uint24(activeId), 0, 25e18, 400e6, distributions
         );
 
         (uint256 amountX, uint256 amountY) = IBaseVault(vault).previewAmounts(IOracleVault(vault).balanceOf(alice));
@@ -290,7 +290,7 @@ contract VaultAndStrategyTest is TestHelper {
         IBaseVault(vault).queueWithdrawal(shares, alice);
 
         vm.prank(owner);
-        IStrategy(strategy).rebalance(0, 0, 0, 0, new uint256[](0), 0, 0);
+        IStrategy(strategy).rebalance(0, 0, 0, 0, 0, 0, new bytes(0));
 
         vm.prank(alice);
         IOracleVault(vault).redeemQueuedWithdrawal(0, alice);
