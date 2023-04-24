@@ -375,14 +375,6 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
     }
 
     /**
-     * @dev Returns the bin step of the pair
-     * @return binStep The bin step of the pair
-     */
-    function _binStep() internal pure returns (uint16 binStep) {
-        binStep = _getArgUint16(80);
-    }
-
-    /**
      * @dev Returns the ids of the tokens in the range.
      * @param lower The lower end of the range.
      * @param upper The upper end of the range.
