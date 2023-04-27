@@ -239,6 +239,8 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @param slippageActiveId The slippage active id.
      * @param distributions The packed distributions. Each bytes16 of the distributions bytes is
      * (distributionX, distributionY) from the `newLower`to the `newUpper` range.
+     * @param amountX The amount of token X to deposit.
+     * @param amountY The amount of token Y to deposit.
      */
     function rebalance(
         uint24 newLower,
