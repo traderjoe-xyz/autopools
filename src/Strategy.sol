@@ -458,7 +458,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             } else {
                 // If the desired active id is lower than the active id, we need to increase the range.
                 unchecked {
-                    delta = uint24(activeId) - desiredActiveId;
+                    delta = activeId - desiredActiveId;
 
                     newLower = newLower > type(uint24).max - delta ? type(uint24).max : newLower + delta;
                     newUpper = newUpper > type(uint24).max - delta ? type(uint24).max : newUpper + delta;
