@@ -266,8 +266,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             uint24 activeId;
             (activeId, newLower, newUpper) = _adjustRange(newLower, newUpper, desiredActiveId, slippageActiveId);
 
-            // Get the distributions and the amounts to deposit, this will take into account the composition of the
-            // LB pair to avoid the active fee.
+            // Get the distributions and the amounts to deposit
             bytes32[] memory liquidityConfigs = _getLiquidityConfigs(newLower, newUpper, distributions);
 
             // Deposit the tokens to the LB pool.
@@ -459,7 +458,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
             } else {
                 // If the desired active id is lower than the active id, we need to increase the range.
                 unchecked {
-                    delta = uint24(activeId) - desiredActiveId;
+                    delta = activeId - desiredActiveId;
 
                     newLower = newLower > type(uint24).max - delta ? type(uint24).max : newLower + delta;
                     newUpper = newUpper > type(uint24).max - delta ? type(uint24).max : newUpper + delta;
@@ -479,7 +478,7 @@ contract Strategy is Clone, ReentrancyGuardUpgradeable, IStrategy {
      * @param idUpper The upper end of the range.
      * @param distributions The packed distributions. Each bytes16 of the distributions bytes is
      * (distributionX, distributionY) from the `newLower`to the `newUpper` range. can be calculated as:
-     * distributions = abi.encodePacked[uint64(distribX0), uint64(distribY0), uint64(distribX1), uint64(distribY1), ...]
+     * distributions = abi.encodePacked(uint64(distribX0), uint64(distribY0), uint64(distribX1), uint64(distribY1), ...)
      * @return liquidityConfigs The liquidity configurations for the given range.
      */
     function _getLiquidityConfigs(uint24 idLower, uint24 idUpper, bytes calldata distributions)
