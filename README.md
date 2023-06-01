@@ -2,7 +2,7 @@
 
 Auto Pools allow users to delegate liquidity management to a strategy operator. This allows liquidity to be rebalanced frequently based on automated signals. 
 - Gas costs are paid by the Strategy Operator
-- Users receive an `APT` token, an ERC20 receipt token for their share of the Auto Pool. 
+- Users receive an `APT` token, an ERC4626 receipt token for their share of the Auto Pool. 
 - Users pay a % Automation Fee upon every rebalance to the Strategy Operator.
 
 ## Install foundry
