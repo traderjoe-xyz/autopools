@@ -1,6 +1,9 @@
-# Joe V2 Vault
+# Autopools
 
-This repository will contain vaults for Liquidity Book.
+Auto Pools allow users to delegate liquidity management to a strategy operator. This allows liquidity to be rebalanced frequently based on automated signals. 
+- Gas costs are paid by the Strategy Operator
+- Users receive an `APT` token, an ERC20 receipt token for their share of the Auto Pool. 
+- Users pay a % Automation Fee upon every rebalance to the Strategy Operator.
 
 ## Install foundry
 
