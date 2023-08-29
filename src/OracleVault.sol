@@ -29,7 +29,7 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 contract OracleVault is BaseVault, IOracleVault {
     using Uint256x256Math for uint256;
 
-    uint8 private constant _PRICE_OFFSET = 128;
+    uint8 internal constant _PRICE_OFFSET = 128;
 
     /**
      * @dev Constructor of the contract.

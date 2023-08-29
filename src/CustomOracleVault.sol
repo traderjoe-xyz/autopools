@@ -26,11 +26,11 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
  * - 0x3D: 1 bytes: The decimals of the token Y.
  * - 0x3E: 20 bytes: The address of the oracle of the token X.
  * - 0x52: 20 bytes: The address of the oracle of the token Y.
+ * - 0x66: 1 bytes: The decimals of the oracle of the token X.
+ * - 0x67: 1 bytes: The decimals of the oracle of the token Y.
  */
 contract CustomOracleVault is OracleVault {
     using Uint256x256Math for uint256;
-
-    uint8 private constant _PRICE_OFFSET = 128;
 
     constructor(IVaultFactory factory) OracleVault(factory) {}
 
