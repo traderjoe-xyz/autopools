@@ -94,7 +94,7 @@ contract OracleVault is BaseVault, IOracleVault {
      * WARNING: Both oracles needs to return the same decimals and use the same quote currency.
      * @return price The price of token X in token Y.
      */
-    function _getPrice() internal view returns (uint256 price) {
+    function _getPrice() internal view virtual returns (uint256 price) {
         uint256 scaledPriceX = _getOraclePrice(_dataFeedX()) * 10 ** _decimalsY();
         uint256 scaledPriceY = _getOraclePrice(_dataFeedY()) * 10 ** _decimalsX();
 
