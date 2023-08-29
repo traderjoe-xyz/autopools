@@ -7,9 +7,10 @@ import {Ownable} from "openzeppelin/access/Ownable.sol";
 
 contract MockAggregator is Ownable, IAggregatorV3 {
     int256 price = 1e18;
+    uint8 private _decimals = 8;
 
-    function decimals() external pure override returns (uint8) {
-        return 8;
+    function decimals() external view override returns (uint8) {
+        return _decimals;
     }
 
     function description() external pure override returns (string memory) {
@@ -40,5 +41,9 @@ contract MockAggregator is Ownable, IAggregatorV3 {
 
     function setPrice(int256 _price) external onlyOwner {
         price = _price;
+    }
+
+    function setDecimals(uint8 decimals_) external onlyOwner {
+        _decimals = decimals_;
     }
 }
