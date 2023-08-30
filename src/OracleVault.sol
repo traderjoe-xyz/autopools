@@ -29,7 +29,7 @@ import {IAggregatorV3} from "./interfaces/IAggregatorV3.sol";
 contract OracleVault is BaseVault, IOracleVault {
     using Uint256x256Math for uint256;
 
-    uint8 private constant _PRICE_OFFSET = 128;
+    uint8 internal constant _PRICE_OFFSET = 128;
 
     /**
      * @dev Constructor of the contract.
@@ -94,7 +94,7 @@ contract OracleVault is BaseVault, IOracleVault {
      * WARNING: Both oracles needs to return the same decimals and use the same quote currency.
      * @return price The price of token X in token Y.
      */
-    function _getPrice() internal view returns (uint256 price) {
+    function _getPrice() internal view virtual returns (uint256 price) {
         uint256 scaledPriceX = _getOraclePrice(_dataFeedX()) * 10 ** _decimalsY();
         uint256 scaledPriceY = _getOraclePrice(_dataFeedY()) * 10 ** _decimalsX();
 

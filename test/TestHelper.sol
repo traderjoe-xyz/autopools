@@ -10,6 +10,7 @@ import "./mocks/MockAggregator.sol";
 import "../src/VaultFactory.sol";
 import "../src/SimpleVault.sol";
 import "../src/OracleVault.sol";
+import "../src/CustomOracleVault.sol";
 import "../src/Strategy.sol";
 
 contract TestHelper is Test {
@@ -43,6 +44,7 @@ contract TestHelper is Test {
         vm.startPrank(owner);
         factory.setVaultImplementation(IVaultFactory.VaultType.Simple, address(new SimpleVault(factory)));
         factory.setVaultImplementation(IVaultFactory.VaultType.Oracle, address(new OracleVault(factory)));
+        factory.setVaultImplementation(IVaultFactory.VaultType.CustomOracle, address(new CustomOracleVault(factory)));
 
         factory.setStrategyImplementation(IVaultFactory.StrategyType.Default, address(new Strategy(factory)));
         vm.stopPrank();

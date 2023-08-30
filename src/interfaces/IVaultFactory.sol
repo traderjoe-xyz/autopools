@@ -28,7 +28,8 @@ interface IVaultFactory {
     enum VaultType {
         None,
         Simple,
-        Oracle
+        Oracle,
+        CustomOracle
     }
 
     enum StrategyType {
@@ -107,9 +108,17 @@ interface IVaultFactory {
         external
         returns (address vault, address strategy);
 
+    function createCustomOracleVaultAndDefaultStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+        external
+        returns (address vault, address strategy);
+
     function createSimpleVaultAndDefaultStrategy(ILBPair lbPair) external returns (address vault, address strategy);
 
     function createOracleVault(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+        external
+        returns (address vault);
+
+    function createCustomOracleVault(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
         external
         returns (address vault);
 

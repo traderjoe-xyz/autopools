@@ -281,12 +281,34 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         onlyOwner
         returns (address vault, address strategy)
     {
-        if (dataFeedX.decimals() != dataFeedY.decimals()) revert VaultFactory__InvalidDecimals();
-
         address tokenX = address(lbPair.getTokenX());
         address tokenY = address(lbPair.getTokenY());
 
         vault = _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
+        strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
+
+        _linkVaultToStrategy(IBaseVault(vault), strategy);
+    }
+
+    /**
+     * @notice Creates a new custom oracle vault and a default strategy for the given LBPair.
+     * @dev The custom oracle vault will be linked to the default strategy.
+     * @param lbPair The address of the LBPair.
+     * @param dataFeedX The address of the data feed for token X.
+     * @param dataFeedY The address of the data feed for token Y.
+     * @return vault The address of the new vault.
+     * @return strategy The address of the new strategy.
+     */
+    function createCustomOracleVaultAndDefaultStrategy(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+        external
+        override
+        onlyOwner
+        returns (address vault, address strategy)
+    {
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
+
+        vault = _createCustomOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
         strategy = _createDefaultStrategy(vault, lbPair, tokenX, tokenY);
 
         _linkVaultToStrategy(IBaseVault(vault), strategy);
@@ -343,6 +365,25 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         address tokenY = address(lbPair.getTokenY());
 
         return _createOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
+    }
+
+    /**
+     * @notice Creates a new custom oracle vault for the given LBPair.
+     * @param lbPair The address of the LBPair.
+     * @param dataFeedX The address of the data feed for token X.
+     * @param dataFeedY The address of the data feed for token Y.
+     * @return vault The address of the new vault.
+     */
+    function createCustomOracleVault(ILBPair lbPair, IAggregatorV3 dataFeedX, IAggregatorV3 dataFeedY)
+        external
+        override
+        onlyOwner
+        returns (address vault)
+    {
+        address tokenX = address(lbPair.getTokenX());
+        address tokenY = address(lbPair.getTokenY());
+
+        return _createCustomOracleVault(lbPair, tokenX, tokenY, dataFeedX, dataFeedY);
     }
 
     /**
@@ -468,6 +509,7 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
 
         if (vType == VaultType.Simple) vName = "Simple";
         else if (vType == VaultType.Oracle) vName = "Oracle";
+        else if (vType == VaultType.CustomOracle) vName = "Custom Oracle";
         else revert VaultFactory__InvalidType();
 
         return string(abi.encodePacked("Automated Pool Token - ", vName, " Vault #", vaultId.toString()));
@@ -503,6 +545,8 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
         IAggregatorV3 dataFeedX,
         IAggregatorV3 dataFeedY
     ) internal returns (address vault) {
+        if (dataFeedX.decimals() != dataFeedY.decimals()) revert VaultFactory__InvalidDecimals();
+
         uint8 decimalsX = IERC20MetadataUpgradeable(tokenX).decimals();
         uint8 decimalsY = IERC20MetadataUpgradeable(tokenY).decimals();
 
@@ -510,6 +554,37 @@ contract VaultFactory is IVaultFactory, Ownable2StepUpgradeable {
             abi.encodePacked(lbPair, tokenX, tokenY, decimalsX, decimalsY, dataFeedX, dataFeedY);
 
         vault = _createVault(VaultType.Oracle, lbPair, tokenX, tokenY, vaultImmutableData);
+
+        // Safety check to ensure the oracles are set correctly
+        if (IOracleVault(vault).getPrice() == 0) revert VaultFactory__InvalidOraclePrice();
+    }
+
+    /**
+     * @dev Internal function to create a new oracle vault.
+     * @param lbPair The address of the LBPair.
+     * @param tokenX The address of token X.
+     * @param tokenY The address of token Y.
+     * @param dataFeedX The address of the data feed for token X.
+     * @param dataFeedY The address of the data feed for token Y.
+     */
+    function _createCustomOracleVault(
+        ILBPair lbPair,
+        address tokenX,
+        address tokenY,
+        IAggregatorV3 dataFeedX,
+        IAggregatorV3 dataFeedY
+    ) internal returns (address vault) {
+        uint8 decimalsX = IERC20MetadataUpgradeable(tokenX).decimals();
+        uint8 decimalsY = IERC20MetadataUpgradeable(tokenY).decimals();
+
+        uint8 oracleDecimalsX = dataFeedX.decimals();
+        uint8 oracleDecimalsY = dataFeedY.decimals();
+
+        bytes memory vaultImmutableData = abi.encodePacked(
+            lbPair, tokenX, tokenY, decimalsX, decimalsY, dataFeedX, dataFeedY, oracleDecimalsX, oracleDecimalsY
+        );
+
+        vault = _createVault(VaultType.CustomOracle, lbPair, tokenX, tokenY, vaultImmutableData);
 
         // Safety check to ensure the oracles are set correctly
         if (IOracleVault(vault).getPrice() == 0) revert VaultFactory__InvalidOraclePrice();
