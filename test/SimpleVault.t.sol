@@ -258,7 +258,6 @@ contract SimpleVaultTest is TestHelper {
         uint256 balance = bob.balance + 2e18;
         depositNativeToVault(nativeIsYVault, bob, 1e18, 2e18);
         uint256 balanceAfter = bob.balance;
-        vm.stopPrank();
 
         assertEq(balanceAfter, balance - 1e18, "test_DepositNative::1");
         assertEq(
